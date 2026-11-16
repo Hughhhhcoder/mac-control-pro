@@ -58,14 +58,17 @@ private func runControl(_ arguments: CLIArguments, monitor: HardwareMonitor) thr
     if let sensor = arguments.sensorID, !baseline.temperatures.contains(where: { $0.id == sensor }) {
         throw CLIError.failed("Temperature sensor \(sensor) is not available.")
     }
-    try checked(client.status())
+    let availability = try client.status()
+    try checked(availability)
+    guard availability.supportsSafeControl else { throw CLIError.failed("The installed helper requires an update before control tests can run.") }
     var primaryError: Error?
     var restoreError: Error?
+    var lastApplicationState: HelperApplicationState?
     do {
         // A rejected or partially failed set must also reach automatic recovery.
         defer {
             do {
-                let reply = try client.automatic(fanID: fanID)
+                let reply = try client.release(fanID: fanID)
                 try emit(ControlEvent(event: "restore", command: "auto", fanID: fanID, helper: reply, snapshot: monitor.snapshot()))
                 try checked(reply)
             } catch {
@@ -80,38 +83,34 @@ private func runControl(_ arguments: CLIArguments, monitor: HardwareMonitor) thr
             var hasSuccessfulSet = false
             while caughtSignal == 0, ProcessInfo.processInfo.systemUptime < deadline {
                 let before = monitor.snapshot()
-                guard let fan = before.fans.first(where: { $0.id == fanID }) else { throw CLIError.failed("Fan disappeared during control.") }
+                guard let fan = before.fans.first(where: { $0.id == fanID }), fan.canRequestControl, let lower = fan.manualMinimumRPM, let upper = fan.maxRPM else { throw CLIError.failed("Fan control prerequisites are unavailable. Run status for the fan-specific reason.") }
                 let source: Double?
                 let requested: Double
                 if let curve = arguments.curve, let sensor = arguments.sensorID {
                     guard let reading = before.temperatures.first(where: { $0.id == sensor }) else { throw CLIError.failed("Curve source disappeared during control.") }
                     source = reading.celsius
-                    requested = curve.rpm(at: reading.celsius, minRPM: max(1200, fan.minRPM), maxRPM: fan.maxRPM)
+                    requested = curve.rpm(at: reading.celsius, minRPM: lower, maxRPM: upper)
                 } else {
                     source = nil
                     requested = arguments.rpm!
                 }
-                if hasSuccessfulSet {
-                    // A safety recovery is authoritative. Never silently reacquire an expired
-                    // or revoked lease after temperatures drop between two sample ticks.
-                    let status = try client.status()
-                    try checked(status)
-                    guard status.manualFanIDs.contains(fanID) else {
-                        throw CLIError.failed("The helper ended this fan's control lease. Refusing to reapply the previous target; start a new command explicitly.")
-                    }
-                }
-                // The helper independently samples temperatures and enforces its policy again.
-                let reply = try client.set(fanID: fanID, rpm: requested)
-                try emit(ControlEvent(event: "sample", command: arguments.command.rawValue, fanID: fanID,
+                // The helper checks ownership and expiry atomically; a renewal cannot reacquire.
+                let reply = try (hasSuccessfulSet ? client.renew(fanID: fanID, rpm: requested) : client.set(fanID: fanID, rpm: requested))
+                try emit(ControlEvent(event: reply.applicationState == .pending ? "pending" : "sample", command: arguments.command.rawValue, fanID: fanID,
                                       sensorID: arguments.sensorID, sourceCelsius: source, requestedRPM: requested,
                                       helper: reply, snapshot: monitor.snapshot()))
                 try checked(reply)
+                guard reply.applicationState == .applied || reply.applicationState == .pending else {
+                    throw CLIError.failed("The helper did not confirm an applied or pending setting. This session released control.")
+                }
                 hasSuccessfulSet = true
+                lastApplicationState = reply.applicationState
                 nextSample += 2
                 // Do not send a burst of missed renewals after a slow I/O operation.
                 nextSample = max(nextSample, ProcessInfo.processInfo.systemUptime + 0.05)
                 waitUntil(min(nextSample, deadline))
             }
+            if lastApplicationState != .applied, caughtSignal == 0 { throw CLIError.failed("The latest setting was not confirmed before this test ended. Automatic release was requested.") }
         } catch {
             primaryError = error
             try? emit(ControlEvent(event: "error", command: arguments.command.rawValue, fanID: fanID, error: error.localizedDescription))
@@ -155,10 +154,10 @@ read: actual snapshot JSON, without the helper. status: helper status + snapshot
 set/curve: JSONL every 2s, default 20s, duration must be >0 and <=60s.
 Curve points are Celsius:RPM, 2–12 ascending temperature points, nondecreasing RPM.
 Each sample includes the requested RPM, helper response and independent hardware snapshot.
-Normal completion, errors, SIGINT and SIGTERM all attempt per-fan automatic recovery.
+Normal completion, errors, SIGINT and SIGTERM release only this client’s owned leases.
 No command disables temperature guards. set/curve require the installed helper; run this
 CLI as your normal user. Omitted command only prints help and never writes hardware.
-Exit codes: 0 success, 1 operational/recovery error, 2 helper unavailable (status),
+Exit codes: 0 success, 1 operational/recovery error, 2 helper unavailable or outdated (status),
 64 invalid usage, 130 SIGINT or 143 SIGTERM after recovery. SIGKILL cannot run cleanup;
 the helper's lease watchdog is the fallback.
 """
@@ -180,7 +179,7 @@ private enum MacControlCLI {
                 var helperError: String?
                 do { helper = try HelperClient().status() } catch { helperError = error.localizedDescription }
                 try emit(StatusReport(date: Date(), helper: helper, helperError: helperError, snapshot: HardwareMonitor().snapshot()), pretty: true)
-                if helper?.ok != true { exit(2) }
+                if helper?.ok != true || helper?.supportsSafeControl != true { exit(2) }
             case .auto:
                 let reply = try HelperClient().automatic(fanID: arguments.fanID)
                 try emit(ControlEvent(event: "restore", command: "auto", fanID: arguments.fanID, helper: reply, snapshot: HardwareMonitor().snapshot()))

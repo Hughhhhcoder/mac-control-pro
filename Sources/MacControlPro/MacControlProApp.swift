@@ -36,7 +36,11 @@ struct MacControlProApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     weak var model: AppModel?
-    func applicationWillTerminate(_ notification: Notification) { model?.shutdown() }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model else { return .terminateNow }
+        Task { @MainActor in await model.finishControlSession(); sender.reply(toApplicationShouldTerminate: true) }
+        return .terminateLater
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }
 
@@ -50,10 +54,10 @@ struct MenuPanel: View {
                 VStack(alignment: .leading) { Text(model.temperature(model.peakTemperature)).font(.title2.monospacedDigit()); Text(model.text("最高温度", "Peak temperature")).font(.caption).foregroundStyle(.secondary) }
                 VStack(alignment: .leading) { Text(model.meanRPM.map { String(format: "%.0f RPM", $0) } ?? "—").font(.title2.monospacedDigit()); Text(model.text("平均转速", "Mean fan speed")).font(.caption).foregroundStyle(.secondary) }
             }
-            Text(model.activeCount > 0 ? model.text("\(model.activeCount) 个风扇正在自定义控制", "\(model.activeCount) fans under custom control") : model.text("风扇由 macOS 自动管理", "Fans managed automatically by macOS")).font(.caption).foregroundStyle(.secondary)
+            Text(model.coolingSummary).font(.caption).foregroundStyle(.secondary)
             Divider()
             Button(model.text("打开控制中心", "Open Control Center")) { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }.buttonStyle(.borderedProminent).frame(maxWidth: .infinity)
-            HStack { Button(model.text("恢复自动", "Restore Automatic"), action: model.restoreAll); Spacer(); SettingsLink { Image(systemName: "gearshape") }; Button(model.text("退出", "Quit")) { model.shutdown(); NSApp.terminate(nil) } }
+            HStack { Button(model.text("恢复自动", "Restore Automatic"), action: model.restoreAll); Spacer(); SettingsLink { Image(systemName: "gearshape") }; Button(model.text("退出", "Quit")) { NSApp.terminate(nil) } }
         }.padding(20).frame(width: 320)
     }
 }

@@ -5,22 +5,32 @@ import IOKit.ps
 /// Real readings only. AppleSMC access can be unavailable; consumers must display that state.
 // Snapshot access is serialized by the internal lock.
 public final class HardwareMonitor: @unchecked Sendable {
-    private let smc: SMCConnection?
-    private let smcError: String?
+    private var smc: SMCConnection?
+    private var smcError: String?
+    private var lastConnectionAttempt: TimeInterval = 0
     private var previousTicks: [UInt64]?
     private let lock = NSLock()
     private let hostPort = mach_host_self()
     private let model = HardwareMonitor.sysctlString("hw.model")
     private let chip = HardwareMonitor.sysctlString("machdep.cpu.brand_string")
 
-    public init() {
-        do { smc = try SMCConnection(); smcError = nil }
-        catch { smc = nil; smcError = error.localizedDescription }
+    public init() { _ = connectSMC() }
+    @discardableResult private func connectSMC() -> Bool {
+        lastConnectionAttempt = ProcessInfo.processInfo.systemUptime
+        do { smc = try SMCConnection(); smcError = nil; return true }
+        catch { smc = nil; smcError = error.localizedDescription; return false }
+    }
+    /// Reopens the device and re-discovers sensor keys after permission or availability changes.
+    @discardableResult public func reconnect() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return connectSMC()
     }
     deinit { mach_port_deallocate(mach_task_self_, hostPort) }
     public func snapshot() -> SystemSnapshot {
         lock.lock(); defer { lock.unlock() }
-        let fans = smc?.fans() ?? []
+        if smc == nil, ProcessInfo.processInfo.systemUptime - lastConnectionAttempt >= 5 { _ = connectSMC() }
+        let inventory = smc?.fanInventory()
+        let fans = inventory?.fans ?? []
         let temperatures = smc?.temperatures() ?? []
         let power = battery()
         let status: String
@@ -29,7 +39,8 @@ public final class HardwareMonitor: @unchecked Sendable {
         else { status = "AppleSMC connected · \(temperatures.count) temperature sensors · \(fans.count) fans" }
         return SystemSnapshot(date: Date(), cpuUsage: cpu(), memoryUsedBytes: usedMemory(), memoryTotalBytes: ProcessInfo.processInfo.physicalMemory,
                               batteryPercent: power.percent, isOnACPower: power.ac, thermalState: thermal(), uptime: ProcessInfo.processInfo.systemUptime,
-                              fans: fans, temperatures: temperatures, hardwareModel: model, chipName: chip.isEmpty ? "Unknown processor" : chip, smcStatus: status)
+                              fans: fans, temperatures: temperatures, hardwareModel: model, chipName: chip.isEmpty ? "Unknown processor" : chip, smcStatus: status,
+                              reportedFanCount: inventory?.reportedFanCount, fanDiscoveryMessage: inventory?.message, smcAvailable: smc != nil)
     }
     private func cpu() -> Double? {
         var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
@@ -59,10 +70,10 @@ public final class HardwareMonitor: @unchecked Sendable {
         return min(ProcessInfo.processInfo.physicalMemory, pages * UInt64(vm_kernel_page_size))
     }
     private func battery() -> (percent: Double?, ac: Bool?) {
-        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
-              let list = IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef] else { return (nil, nil) }
+        guard let info = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else { return (nil, nil) }
         var ac: Bool?
-        if let source = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String? { ac = source == kIOPSACPowerValue }
+        if let source = IOPSGetProvidingPowerSourceType(info)?.takeUnretainedValue() as String? { ac = source == kIOPSACPowerValue ? true : source == kIOPSBatteryPowerValue ? false : nil }
+        let list = (IOPSCopyPowerSourcesList(info)?.takeRetainedValue() as? [CFTypeRef]) ?? []
         for source in list {
             guard let description = IOPSGetPowerSourceDescription(info, source)?.takeUnretainedValue() as? [String: Any],
                   let current = description[kIOPSCurrentCapacityKey] as? NSNumber,

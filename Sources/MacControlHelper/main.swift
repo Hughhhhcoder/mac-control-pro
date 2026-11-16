@@ -12,17 +12,83 @@ private final class FanHelper {
     var smc: SMCConnection?
     var connectionError: String?
     var leases = FanLeaseBook()
+    var pendingFanIDs = Set<Int>()
+    var recoveryRequiredFanIDs = Set<Int>()
+    var lastRecovery: HelperControlBlock?
+    private var lastConnectionAttempt: TimeInterval = -.infinity
+    private let hardwareModel = FanHelper.modelIdentifier()
     // Match wall-clock-independent deadlines; manual overrides must not survive a clock adjustment.
     var monotonicNow: Date { Date(timeIntervalSinceReferenceDate: ProcessInfo.processInfo.systemUptime) }
 
     init(authorizedUID: uid_t) {
         self.authorizedUID = authorizedUID
-        do { smc = try SMCConnection() }
+        ensureConnection()
+    }
+
+    private static func modelIdentifier() -> String {
+        var length = 0
+        guard sysctlbyname("hw.model", nil, &length, nil, 0) == 0, length > 0, length < 256 else { return "Unknown" }
+        var bytes = [CChar](repeating: 0, count: length)
+        guard sysctlbyname("hw.model", &bytes, &length, nil, 0) == 0 else { return "Unknown" }
+        return String(cString: bytes)
+    }
+
+    private var thermalPressure: Bool {
+        switch ProcessInfo.processInfo.thermalState {
+        case .serious, .critical: return true
+        default: return false
+        }
+    }
+
+    private func ensureConnection() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard smc == nil, now - lastConnectionAttempt >= 5 else { return }
+        lastConnectionAttempt = now
+        do { smc = try SMCConnection(); connectionError = nil }
         catch { connectionError = error.localizedDescription }
     }
 
-    func response(ok: Bool, _ message: String) -> HelperResponse {
-        HelperResponse(ok: ok, message: message, manualFanIDs: leases.fanIDs)
+    func response(ok: Bool, _ message: String, errorCode: HelperErrorCode? = nil,
+                  state: HelperApplicationState? = nil, requestedRPM: Double? = nil,
+                  confirmedTargetRPM: Double? = nil, retryAfter: Double? = nil,
+                  block: HelperControlBlock? = nil) -> HelperResponse {
+        HelperResponse(ok: ok, message: message, manualFanIDs: leases.fanIDs,
+                       protocolVersion: FanControlProtocol.currentVersion, helperVersion: FanControlProtocol.helperVersion,
+                       authorizedUID: authorizedUID, smcAvailable: smc != nil, hardwareModel: hardwareModel,
+                       controlBlockReason: block?.message, controlBlockCode: block?.code,
+                       temperatureLimitCelsius: FanControlPolicy.maximumTemperature,
+                       requestedRPM: requestedRPM, confirmedTargetRPM: confirmedTargetRPM,
+                       errorCode: errorCode, applicationState: state, retryAfterSeconds: retryAfter,
+                       pendingFanIDs: Array(pendingFanIDs), lastRecoveryReason: lastRecovery?.message,
+                       lastRecoveryCode: lastRecovery?.code)
+    }
+
+    private func statusResponse() -> HelperResponse {
+        ensureConnection()
+        guard let smc else {
+            var reply = response(ok: false, "The helper is installed, but SMC access is unavailable: \(connectionError ?? "Unknown error"). It will retry automatically.", errorCode: .smcUnavailable, state: .blocked)
+            reply.canControl = false; reply.controlBlockCode = .smcUnavailable; reply.controlBlockReason = reply.message
+            reply.fanCapabilities = []
+            return reply
+        }
+        let fans = smc.fans()
+        let temperatures = smc.temperatures().map(\.celsius)
+        let capabilities = fans.map { fan in
+            HelperFanCapability(id: fan.id, canControl: fan.canRequestControl,
+                                issue: fan.controlIssue.map { String($0.prefix(160)) }, minRPM: fan.minRPM, maxRPM: fan.maxRPM,
+                                modeKey: fan.modeKey, targetKey: fan.targetKey)
+        }
+        let block: HelperControlBlock?
+        if let guardBlock = FanControlPolicy.guardFailure(temperatures: temperatures, thermalPressure: thermalPressure) { block = guardBlock }
+        else if !recoveryRequiredFanIDs.isEmpty { block = .init(code: .recoveryFailed, message: "Automatic recovery is still in progress. New control requests are blocked until recovery is confirmed.") }
+        else if fans.isEmpty { block = .init(code: .fanUnavailable, message: "No fan control records are exposed by this Mac. Monitoring remains available.") }
+        else if !capabilities.contains(where: \.canControl) { block = .init(code: .fanReadOnly, message: "Fan readings are available, but this firmware does not expose all required control keys and bounds.") }
+        else { block = nil }
+        var reply = response(ok: true, "Fan helper connected. Control protocol \(FanControlProtocol.currentVersion); leases expire after 12 seconds.",
+                             state: block != nil ? .blocked : pendingFanIDs.isEmpty ? (leases.fanIDs.isEmpty ? .automatic : .applied) : .pending, block: block)
+        reply.fanCapabilities = capabilities; reply.canControl = block == nil
+        reply.hottestTemperatureCelsius = temperatures.max()
+        return reply
     }
 
     /// Persist ownership before hardware writes so launchd restart can recover a crashed helper.
@@ -79,60 +145,142 @@ private final class FanHelper {
     func handle(_ request: FanRequest) -> HelperResponse {
         do {
             try request.validate()
-            guard let smc else { return response(ok: false, "SMC is unavailable: \(connectionError ?? "Unknown error")") }
+            if request.command == .status { return statusResponse() }
+            if request.command == .set || request.command == .renew || request.command == .release { try request.validateForControl() }
+            if request.command == .release, leases.ownedFanIDs(ownerID: request.leaseID!, fanID: request.fanID).isEmpty {
+                return response(ok: true, "This session owns no matching fan controls. No hardware state was changed.", state: .released)
+            }
+            ensureConnection()
+            guard let smc else { return response(ok: false, "The helper is installed, but SMC access is unavailable: \(connectionError ?? "Unknown error")", errorCode: .smcUnavailable, state: .blocked) }
             switch request.command {
             case .status:
-                return response(ok: true, "Helper ready. Manual control leases expire after 12 seconds.")
-            case .set:
-                let fanID = request.fanID!
-                let rpm = request.rpm!
+                return statusResponse()
+            case .set, .renew:
+                let fanID = request.fanID!, rpm = request.rpm!, owner = request.leaseID!
+                var nextLeases = leases
+                if request.command == .renew { try nextLeases.renewExisting(fanID: fanID, ownerID: owner, now: monotonicNow) }
+                else { try nextLeases.acquire(fanID: fanID, ownerID: owner, now: monotonicNow) }
+                guard !recoveryRequiredFanIDs.contains(fanID) else {
+                    return response(ok: false, "Automatic recovery for fan \(fanID + 1) is still in progress. Control cannot resume until automatic mode is confirmed.", errorCode: .recoveryFailed, state: .blocked)
+                }
                 guard let fan = smc.fans().first(where: { $0.id == fanID }) else {
-                    return response(ok: false, "This fan does not exist or is unavailable.")
+                    return response(ok: false, "This fan is not reported by this Mac.", errorCode: .fanUnavailable, state: .blocked)
                 }
-                try FanControlPolicy.validateSet(requestedRPM: rpm, minimumRPM: fan.minRPM, maximumRPM: fan.maxRPM,
-                                                 temperatures: smc.temperatures().map(\.celsius))
-                // Track before writing so any partial SMC failure remains subject to cleanup.
-                if !leases.fanIDs.contains(fanID) { try persistOwnership(leases.fanIDs + [fanID]) }
-                leases.renew(fanID: fanID, now: monotonicNow)
-                do { try smc.setFan(id: fanID, rpm: rpm) }
-                catch {
-                    try? smc.restoreAutomatic(fanID: fanID)
-                    throw error
+                guard fan.canRequestControl, let minimum = fan.minRPM, let maximum = fan.maxRPM else {
+                    return response(ok: false, fan.controlIssue ?? "This fan is available for monitoring only.", errorCode: .fanReadOnly, state: .blocked)
                 }
-                return response(ok: true, "Fan \(fanID + 1) set to \(Int(rpm)) RPM; lease renewed.")
+                let temperatures = smc.temperatures().map(\.celsius)
+                if let block = FanControlPolicy.guardFailure(temperatures: temperatures, thermalPressure: thermalPressure) {
+                    return response(ok: false, block.message, errorCode: block.code, state: .blocked, block: block)
+                }
+                try FanControlPolicy.validateSet(requestedRPM: rpm, minimumRPM: minimum, maximumRPM: maximum, temperatures: temperatures)
+                // Check the ownership contract before any write. Persist new ownership before
+                // the SMC change, so a partial write remains recoverable after a helper crash.
+                if !leases.fanIDs.contains(fanID) { try persistOwnership(nextLeases.fanIDs) }
+                leases = nextLeases
+                do {
+                    switch try smc.setFan(id: fanID, rpm: rpm) {
+                    case .pending(let retryAfter, let message):
+                        pendingFanIDs.insert(fanID)
+                        return response(ok: true, message, state: .pending, requestedRPM: rpm, retryAfter: retryAfter)
+                    case .applied:
+                        let confirmed = smc.fans().first(where: { $0.id == fanID })
+                        guard confirmed?.isManual == true else {
+                            throw SMCError.verificationFailed(confirmed?.modeKey ?? "fan \(fanID + 1) manual mode")
+                        }
+                        guard let target = confirmed?.targetRPM, abs(target - rpm) < 1 else {
+                            throw SMCError.writeNotConfirmed(key: "fan \(fanID + 1) target", requested: rpm, observed: confirmed?.targetRPM)
+                        }
+                        pendingFanIDs.remove(fanID); lastRecovery = nil
+                        return response(ok: true, "Fan \(fanID + 1) target accepted. Actual RPM is reported separately and may take time to settle.",
+                                        state: .applied, requestedRPM: rpm, confirmedTargetRPM: target)
+                    }
+                } catch {
+                    let writeMessage = error.localizedDescription
+                    do {
+                        try smc.restoreAutomatic(fanID: fanID)
+                        leases.remove(fanID: fanID); pendingFanIDs.remove(fanID); recoveryRequiredFanIDs.remove(fanID)
+                        try persistOwnership(leases.fanIDs)
+                        return response(ok: false, "Fan control failed: \(writeMessage) Automatic mode was restored.", errorCode: .writeFailed, state: .automatic, requestedRPM: rpm)
+                    } catch {
+                        if leases.fanIDs.contains(fanID) { recoveryRequiredFanIDs.insert(fanID) }
+                        return response(ok: false, "Fan control failed: \(writeMessage) Automatic recovery also failed: \(error.localizedDescription). The helper will keep retrying recovery.", errorCode: .recoveryFailed, state: .blocked, requestedRPM: rpm)
+                    }
+                }
+            case .release:
+                let owned = leases.ownedFanIDs(ownerID: request.leaseID!, fanID: request.fanID)
+                var failures: [String] = []
+                for fanID in owned {
+                    do {
+                        try smc.restoreAutomatic(fanID: fanID)
+                        leases.remove(fanID: fanID); pendingFanIDs.remove(fanID); recoveryRequiredFanIDs.remove(fanID)
+                    } catch {
+                        recoveryRequiredFanIDs.insert(fanID)
+                        failures.append("Fan \(fanID + 1): \(error.localizedDescription)")
+                    }
+                }
+                do { try persistOwnership(leases.fanIDs) }
+                catch { failures.append("Recovery journal: \(error.localizedDescription)") }
+                if !failures.isEmpty {
+                    return response(ok: false, "Some controls owned by this session could not be released: " + failures.prefix(3).joined(separator: "; "), errorCode: .recoveryFailed, state: .blocked)
+                }
+                return response(ok: true, "This session's fan controls were released to system automatic mode. Other sessions were not changed.", state: .released)
             case .automatic:
                 if let fanID = request.fanID {
-                    guard smc.fans().contains(where: { $0.id == fanID }) else {
-                        return response(ok: false, "This fan does not exist or is unavailable.")
+                    do { try smc.restoreAutomatic(fanID: fanID) }
+                    catch {
+                        if leases.fanIDs.contains(fanID) { recoveryRequiredFanIDs.insert(fanID) }
+                        throw error
                     }
-                    try smc.restoreAutomatic(fanID: fanID)
-                    leases.remove(fanID: fanID)
-                    try persistOwnership(leases.fanIDs)
+                    leases.remove(fanID: fanID); pendingFanIDs.remove(fanID); recoveryRequiredFanIDs.remove(fanID)
                 } else {
-                    try smc.restoreAllAutomatic()
-                    leases.removeAll()
-                    try persistOwnership([])
+                    do { try smc.restoreAllAutomatic() }
+                    catch {
+                        recoveryRequiredFanIDs.formUnion(leases.fanIDs)
+                        throw error
+                    }
+                    leases.removeAll(); pendingFanIDs.removeAll(); recoveryRequiredFanIDs.removeAll()
                 }
-                return response(ok: true, "System automatic control restored.")
+                try persistOwnership(leases.fanIDs); lastRecovery = nil
+                return response(ok: true, "System automatic control was restored.", state: .automatic)
             }
-        } catch { return response(ok: false, error.localizedDescription) }
+        } catch let error as FanControlError {
+            let reason = error.code == .leaseExpired ? lastRecovery?.message : nil
+            return response(ok: false, reason.map { "\(error.localizedDescription) \($0)" } ?? error.localizedDescription,
+                            errorCode: error.code, state: .blocked)
+        } catch {
+            return response(ok: false, error.localizedDescription,
+                            errorCode: request.command == .automatic || request.command == .release ? .recoveryFailed : .writeFailed, state: .blocked)
+        }
     }
 
     func enforceLeases() {
+        ensureConnection()
         guard !leases.fanIDs.isEmpty, let smc else { return }
         let temperatures = smc.temperatures().map(\.celsius)
-        let unsafe = temperatures.isEmpty || temperatures.contains { !$0.isFinite || $0 <= 0 || $0 >= FanControlPolicy.maximumTemperature }
-        let restoreIDs = unsafe ? leases.fanIDs : leases.expired(at: monotonicNow)
-        for id in restoreIDs {
+        let block = FanControlPolicy.guardFailure(temperatures: temperatures, thermalPressure: thermalPressure)
+        let fans = smc.fans()
+        var changed = false
+        for id in leases.fanIDs {
+            let fan = fans.first(where: { $0.id == id })
+            // Release a global unlock before clearing ownership after firmware reclaims
+            // a per-fan mode. Failed restoration must remain in the recovery journal.
+            let reclaimed = block == nil && !pendingFanIDs.contains(id) && [0, 3].contains(fan?.modeRawValue ?? -1)
+            let expired = !leases.isActive(fanID: id, now: monotonicNow)
+            let missing = fan == nil || fan?.canRequestControl == false
+            let recoveryRequired = recoveryRequiredFanIDs.contains(id)
+            guard block != nil || reclaimed || expired || missing || recoveryRequired else { continue }
             do {
                 try smc.restoreAutomatic(fanID: id)
-                leases.remove(fanID: id)
+                leases.remove(fanID: id); pendingFanIDs.remove(id); recoveryRequiredFanIDs.remove(id); changed = true
+                lastRecovery = block ?? (missing ? .init(code: .fanReadOnly, message: "Fan \(id + 1) lost readable control prerequisites; automatic mode was restored.") : .init(code: .leaseExpired, message: recoveryRequired ? "Automatic recovery for fan \(id + 1) was confirmed; the previous control session was ended." : reclaimed ? "Firmware returned fan \(id + 1) to system control; automatic recovery was confirmed." : "The client stopped renewing fan \(id + 1); automatic mode was restored."))
             } catch {
-                // Keep failed restorations in the book and retry on the next watchdog tick.
-                fputs("Automatic restore failed for fan \(id): \(error.localizedDescription)\n", stderr)
+                recoveryRequiredFanIDs.insert(id)
+                lastRecovery = .init(code: .recoveryFailed, message: "Automatic recovery for fan \(id + 1) failed and will be retried: \(error.localizedDescription)")
+                fputs(lastRecovery!.message + "\n", stderr)
             }
         }
-        if !restoreIDs.isEmpty {
+        if changed {
             do { try persistOwnership(leases.fanIDs) }
             catch { fputs("Control recovery journal update failed: \(error.localizedDescription)\n", stderr) }
         }
@@ -140,12 +288,14 @@ private final class FanHelper {
 
     func cleanup() {
         guard let smc else { return }
-        // Only restore overrides created by this helper; do not interfere with another utility.
         for id in leases.fanIDs {
             do {
                 try smc.restoreAutomatic(fanID: id)
-                leases.remove(fanID: id)
-            } catch { fputs("Shutdown restore failed for fan \(id): \(error.localizedDescription)\n", stderr) }
+                leases.remove(fanID: id); pendingFanIDs.remove(id); recoveryRequiredFanIDs.remove(id)
+            } catch {
+                recoveryRequiredFanIDs.insert(id)
+                fputs("Shutdown restore failed for fan \(id): \(error.localizedDescription)\n", stderr)
+            }
         }
         do { try persistOwnership(leases.fanIDs) }
         catch { fputs("Shutdown recovery journal update failed: \(error.localizedDescription)\n", stderr) }
@@ -210,7 +360,7 @@ private final class FanHelper {
                     let reply = handle(request)
                     try FanControlSocket.send(JSONEncoder().encode(reply), to: client)
                 } catch {
-                    let reply = response(ok: false, "Invalid helper request: \(error.localizedDescription)")
+                    let reply = response(ok: false, "Invalid helper request: \(error.localizedDescription)", errorCode: .invalidRequest, state: .blocked)
                     try? FanControlSocket.send(JSONEncoder().encode(reply), to: client)
                 }
             }
@@ -220,16 +370,27 @@ private final class FanHelper {
 }
 
 let arguments = CommandLine.arguments
+if arguments.contains("--version") {
+    print("MacControlHelper \(FanControlProtocol.helperVersion) (control protocol \(FanControlProtocol.currentVersion))")
+    exit(0)
+}
 if arguments.contains("--help") {
-    print("Mac Control Pro fan helper\nUsage: MacControlHelper --uid USER_ID\n       MacControlHelper --self-test\nRuns as root under launchd. Only the configured UID or root can connect.")
+    print("Mac Control Pro fan helper\nUsage: MacControlHelper --uid USER_ID\n       MacControlHelper --self-test\n       MacControlHelper --version\nRuns as root under launchd. Only the configured UID or root can connect.")
     exit(0)
 }
 if arguments.contains("--self-test") {
     do {
-        let request = FanRequest(command: .set, fanID: 0, rpm: 2000)
-        try JSONDecoder().decode(FanRequest.self, from: JSONEncoder().encode(request)).validate()
+        let owner = UUID().uuidString
+        let request = FanRequest(command: .set, fanID: 0, rpm: 2000, leaseID: owner)
+        try JSONDecoder().decode(FanRequest.self, from: JSONEncoder().encode(request)).validateForControl()
+        var leases = FanLeaseBook()
+        try leases.acquire(fanID: 0, ownerID: owner)
+        try leases.renewExisting(fanID: 0, ownerID: owner)
+        guard leases.ownedFanIDs(ownerID: UUID().uuidString).isEmpty, leases.ownedFanIDs(ownerID: owner) == [0] else {
+            throw FanControlError.invalidRequest("Lease ownership self-test failed.")
+        }
         try FanControlPolicy.validateSet(requestedRPM: 2000, minimumRPM: 1000, maximumRPM: 6000, temperatures: [45])
-        print("Helper protocol and control policy self-test passed. No hardware was accessed or changed.")
+        print("Helper \(FanControlProtocol.helperVersion), protocol \(FanControlProtocol.currentVersion), lease ownership and control policy self-test passed. No hardware was accessed or changed.")
         exit(0)
     } catch { fputs("Self-test failed: \(error)\n", stderr); exit(1) }
 }

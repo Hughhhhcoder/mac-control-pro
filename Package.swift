@@ -17,6 +17,7 @@ let package = Package(
         .executableTarget(name: "MacControlHelper", dependencies: ["MacControlCore"]),
         .executableTarget(name: "MacControlCLI", dependencies: ["MacControlCore"]),
         .testTarget(name: "MacControlCoreTests", dependencies: ["MacControlCore"]),
-        .testTarget(name: "MacControlCLITests", dependencies: ["MacControlCLI"])
+        .testTarget(name: "MacControlCLITests", dependencies: ["MacControlCLI"]),
+        .testTarget(name: "MacControlProTests", dependencies: ["MacControlPro"])
     ]
 )

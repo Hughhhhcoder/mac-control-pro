@@ -1,27 +1,22 @@
-## Mac Control Pro 0.1.1
+## Mac Control Pro 0.2.0
 
-原生 SwiftUI 监控与风扇管理，MIT 全开源。提供 Apple Silicon + Intel 通用 DMG、ZIP 和 SHA-256，源码归档由 GitHub Release 提供。
+### 安装与跨机型处理
 
-### 修复与新增
+- 新增完整通用 PKG，一次安装应用与匹配助手；DMG 内也包含该安装器。
+- 应用设置自带助手安装、更新与卸载入口，使用 macOS 原生安装器和本机登录账户，无固定 UID、源码或终端依赖。
+- 按实际能力识别各只风扇，区分无风扇、读取失败、只读和可控制状态。补齐双风扇独立控制、受保护模式处理及桌面低转速范围路径。
+- 内置预设改为风扇范围百分比，适配 MacBook Pro、Mac mini / Mac Studio 等不同转速范围；自定义配置保留绝对 RPM，并兼容 schema 1。
 
-- 修复目标写入后立即读到旧 `F%dTg` 导致误判失败的问题：采用最多 0.8 秒的单调时钟确认，保留模式校验、温度保护及失败回滚。
-- 助手结束控制租约后，客户端停止原会话，避免自动重新申请旧目标。
-- 应用内置 `MacControlCLI`，支持真实读取、有时限固定转速、温度曲线、JSONL 采样与结束恢复。
-- 自动化测试增至 28 项；增加本机硬件验证数据和时间图。
+### 控制状态与恢复
 
-### 真实硬件验证
+- P2 协议绑定会话所有权，分离新控制、续约、会话释放与用户明确恢复自动；旧助手须升级后才能控制。
+- 等待助手或固件时显示处理中；目标完成有期限回读后，核心与助手都在最终风扇快照中核对手动模式和目标转速，二者同时匹配才标记已应用。续约同样检查确认结果，失败不重放旧目标；已应用不等于实际 RPM 已稳定。
+- 80 项 XCTest 通过，覆盖多风扇、延迟读回、受保护状态、失联、配置迁移和界面异步状态；助手与 CLI 自检、通用构建及安装包结构检查通过。
 
-在 Mac18,1 / Apple M6 / macOS 27.0 上安装控制助手后：
+### 验证范围
 
-- 固定 3000 RPM 实际达到 3001 RPM；5500 RPM 稳定后读数为 5490–5505 RPM。两次固定测试随后均触发 85°C 保护，不宣称完整 20 秒稳定性。
-- 以 TCMb 为温度来源的曲线完整运行 12 秒，6 次请求均通过；目标随温度变化，正常结束后手动模式清除、租约为空。
-- 强制结束控制客户端后，独立采样在 12.131 秒观察到自动模式。
-- 原生应用实际操作：4500 RPM 固定运行约 20 秒，稳定实际 4492–4510 RPM；“持续负载”曲线观察约 24 秒，目标 4762–6500 RPM，最后均由界面恢复自动。
+新增跨机型路径由模拟传输和自动化测试覆盖，**不宣称所有 2022 年以来的 Mac 已实测通过**。物理证据限于 Mac18,1 / Apple M6 / macOS 27.0：0.1.1 的完整记录，以及 0.2.0 早期候选的 CLI 固定转速、曲线、租约到期和竞争会话拒绝记录。候选记录只说明当时构建，不能证明 M4 Pro、Mac mini、Mac Studio 或 Intel 已实测通过。
 
-[硬件验证记录](https://github.com/Hughhhhcoder/mac-control-pro/blob/v0.1.1/docs/HARDWARE_VALIDATION.md) · [CLI 文档](https://github.com/Hughhhhcoder/mac-control-pro/blob/v0.1.1/docs/CLI.md)
+[兼容性矩阵](https://github.com/Hughhhhcoder/mac-control-pro/blob/v0.2.0/docs/COMPATIBILITY.md) · [已有硬件记录](https://github.com/Hughhhhcoder/mac-control-pro/blob/v0.2.0/docs/HARDWARE_VALIDATION.md) · [安装说明](https://github.com/Hughhhhcoder/mac-control-pro/blob/v0.2.0/docs/INSTALLATION.md)
 
-### 安装与范围
-
-监控无需管理员权限；风扇写入需要另行安装开源助手，见 [仓库说明](https://github.com/Hughhhhcoder/mac-control-pro/tree/v0.1.1#安装风扇控制助手可选)。发行包仍为 ad-hoc 签名、未 Apple 公证，首次启动可能需要在系统设置的「隐私与安全性」中选择「仍要打开」。
-
-SMC 接口未公开，单台 M6 的实测不覆盖其他 Mac。Intel 和其他 Apple Silicon 机型的硬件写入、macOS 14 实机运行及未执行的异常恢复路径仍未验证。模拟界面数据不用于硬件能力结论。
+要求 macOS 14 或更新，提供 arm64 + x86_64 通用 PKG、DMG、ZIP 与 SHA-256。默认构建尚未 Apple 公证；监控不需要管理员权限，助手安装由 macOS 请求管理员验证。SMC 兼容性仍取决于具体硬件及系统。

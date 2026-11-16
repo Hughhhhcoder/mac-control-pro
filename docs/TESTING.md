@@ -8,7 +8,9 @@ swift run MacControlHelper --self-test
 swift run MacControlCLI --self-test
 ```
 
-当前共 28 项 XCTest：17 项核心 / 助手测试及 11 项 CLI 参数测试。核心覆盖数值解码、曲线验证与插值、命令参数、温度保护和租约超时；CLI 覆盖参数、时限、曲线节点和非法输入。两个 `--self-test` 均不访问或写入硬件，不要求 root。
+当前 80 项 XCTest 全部通过：51 项核心 / 助手、18 项应用状态、11 项 CLI 参数测试。覆盖风扇发现与缺失读数、单 / 双 / 多风扇、桌面机范围、Intel 位掩码、Apple Silicon 保护模式等待、手动模式与目标转速同时确认、温度保护、租约所有权和异步取消。助手与 CLI 的 `--self-test` 均通过，不访问或写入硬件，也不要求 root。
+
+0.2.0 通用包已完成构建与安装器结构检查；结构检查只展开包并核对内容，不执行管理员安装或硬件写入。
 
 这些检查不会证明某台 Mac 支持 SMC 写入。CI 的通用构建证明两个架构能编译，不代表两种硬件均经过实机控制测试。
 
@@ -21,6 +23,7 @@ codesign --verify --deep --strict "dist/Mac Control Pro.app"
 lipo -archs "dist/Mac Control Pro.app/Contents/MacOS/MacControlPro"
 lipo -archs "dist/Mac Control Pro.app/Contents/Library/LaunchServices/MacControlHelper"
 lipo -archs "dist/Mac Control Pro.app/Contents/MacOS/MacControlCLI"
+./scripts/test-installer.sh dist/*.pkg dist/*.zip
 ```
 
 确认诊断值来自真实系统：没有电池的设备不显示虚构电量，没有风扇的设备不显示模拟风扇，读取失败时清晰说明不可用。CPU 需要两次采样后才可计算差值。
@@ -36,6 +39,14 @@ lipo -archs "dist/Mac Control Pro.app/Contents/MacOS/MacControlCLI"
 只有主动安装助手后才能验证实际写入。测试报告应记录机型、系统版本、观察到的 RPM、控制模式和恢复结果；不要把纯单元测试或 mock 结果标成硬件验证。优先验证恢复 Apple 自动、连接丢失的租约到期，以及不接受超范围 RPM 或不可信温度。
 
 本仓库默认构建与 CI 不自动安装 root 助手，不自动改变风扇状态。提交中涉及写入的改动需要说明哪些硬件实际验证过，哪些仍未知。
+
+## 0.2.0 候选验证边界
+
+早期候选已在 Mac18,1 / Apple M6 / macOS 27.0 上通过 CLI 执行固定转速、温度曲线、客户端丢失后的租约回退和竞争会话拒绝。记录中的固定与曲线客户端正常结束，最终均为自动模式、租约为空；异常结束测试也恢复自动。结论只对应当时的候选二进制，不延伸至后续修改或其他机型。
+
+「已应用」需要核心与助手都在最终风扇快照中确认手动模式和目标转速同时匹配。回归覆盖固件收回逐风扇模式、收回 Intel `FS!` 位，以及目标曾匹配后再次改变；这些情况均不得继续返回已应用，并须尝试恢复自动。实际风扇达到目标还需要独立采样观察，不能从助手返回成功推断。
+
+M4 Pro 双风扇、Mac mini / Mac Studio 低转速及 Intel 位掩码以模拟传输和回归测试为证据，没有这些机型的实机通过记录。
 
 ## 0.1.1 实机控制记录（2026-11-16）
 

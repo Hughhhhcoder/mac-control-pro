@@ -1,0 +1,7 @@
+#!/bin/bash
+set -euo pipefail
+[[ "$EUID" -eq 0 && "${3:-/}" == / ]] || { echo 'Install on the current startup volume with administrator authorization.' >&2; exit 1; }
+INSTALLER_SCRIPTS="$(cd "$(/usr/bin/dirname "$0")" && pwd)"
+. "$INSTALLER_SCRIPTS/console-user.sh"
+CONTROL_UID="$(console_control_uid)"
+exec /bin/bash "$INSTALLER_SCRIPTS/install-helper.sh" --helper "$INSTALLER_SCRIPTS/MacControlHelper" --uid "$CONTROL_UID"

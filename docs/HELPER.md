@@ -1,48 +1,54 @@
 # 特权控制助手
 
-## 为什么单独安装
+## 原生安装入口
 
-普通应用读取系统状态不需要以管理员身份运行。风扇模式和目标转速写入可能需要 root，因此本项目把写入收敛到一个小型、独立的开源进程。下载应用不会自动安装助手，也不会弹出反复的管理员密码框。
+完整的通用 `.pkg` 同时安装应用和助手。DMG 内也提供该安装器；ZIP 或仅拖动应用的用户可在设置中打开应用自带的 `Install Fan Helper.pkg`。助手包内含与应用匹配的签名二进制和完整安装脚本，不依赖开发者机器上的文件。
 
-## 安装后的系统文件
+macOS 安装器负责管理员验证，安装脚本读取 `/dev/console` 当前用户 UID，确认该 UID 对应真实非系统账户、数值至少为 501，再将其写入服务参数。没有固定 UID，也不要求 PKG 环境存在 `SUDO_UID`。服务授权单个账户；在另一账户使用时，应由管理员为该账户重新安装。
+
+普通监控不需要助手。安装成功与硬件调速能力分开显示：root 权限不能使不支持的固件接口生效。
+
+## 系统文件
 
 | 路径 | 用途 |
 | --- | --- |
-| `/Library/PrivilegedHelperTools/io.github.hughhhhcoder.MacControlPro.helper` | root:wheel 拥有的助手可执行文件 |
-| `/Library/LaunchDaemons/io.github.hughhhhcoder.MacControlPro.helper.plist` | 系统 launchd 服务配置 |
-| `/var/run/mac-control-pro/control.sock` | 仅用于本地命令的 Unix socket |
-| `/var/run/mac-control-pro/leases.json` | root 拥有、0600 权限的风扇所有权恢复日志，只保存风扇 ID |
+| `/Library/PrivilegedHelperTools/io.github.hughhhhcoder.MacControlPro.helper` | root:wheel、0755 的助手 |
+| `/Library/LaunchDaemons/io.github.hughhhhcoder.MacControlPro.helper.plist` | root:wheel 的系统服务配置 |
+| `/var/run/mac-control-pro/control.sock` | 仅安装时选定用户可访问的本地 socket |
+| `/var/run/mac-control-pro/leases.json` | root 拥有、0600 的控制恢复日志，仅含风扇 ID |
+| `/var/run/io.github.hughhhhcoder.MacControlPro.install.lock` | 安装与卸载的互斥锁；操作结束后移除 |
 
-`sudo ./scripts/install-helper.sh "/Applications/Mac Control Pro.app"` 将当前用户 UID 固定到服务参数 `--uid`。安装脚本先验证应用和嵌入助手，再把助手复制到 root 拥有的临时位置，验证副本后原子替换到最终位置；root 不直接执行应用包或构建目录中的用户可写文件。替换现有助手前先停止旧服务，触发其自动恢复处理。
+安装脚本拒绝不安全的符号链接、所有者和可写目录。助手先复制到 root 拥有的临时文件，再验证签名完整性；root 不直接执行应用或用户构建目录里的程序。替换前停止旧助手并等待退出，保留恢复日志；新服务未就绪时尝试还原旧文件并恢复原服务。过期 socket 只在受保护的运行目录中、旧进程结束后处理。
 
-签名完整性检查不等于 Apple 公证，也不等于第三方安全审计。安装前应信任你正在构建或下载的源码与文件。
+默认构建没有 Developer ID Installer 身份和 Apple 公证。ad-hoc 代码签名仅检查完整性，不证明发布者身份；应从可信源码或官方仓库下载。
 
-## 协议约束
+## 协议边界
 
-助手通过 Unix socket 接收受限 JSON 命令，验证内核提供的对端用户身份，而非信任 JSON 中声称的 UID。授权 UID 必须为 501 或以上；root 也可以请求控制。同一用户的其他进程可使用这个接口，助手没有逐客户端的代码签名校验。它只支持自身定义的风扇控制和状态操作，不运行 shell，不接受任意路径或 SMC key。
+助手通过内核提供的对端 UID 验证客户端，不信任请求内声称的身份。授权账户及 root 可连接；同一账户的其他进程也可使用该接口，未做逐客户端的代码签名身份验证。接口只接受定义好的风扇状态、目标与恢复操作，不执行任意 shell、文件路径或 SMC key。
 
-手动转速必须有限且落在硬件的有效 RPM 范围，并遵守至少 1200 RPM 的额外下限。目标风扇必须真实存在。控制客户端需要续约；独立于 UI 的租约检查在约 12 秒未续约时恢复自动模式。高温阈值为 85°C，读取不到可用于保护的温度时拒绝手动模式。助手退出时也会尝试恢复所有受控风扇。
+P2 协议将控制与会话所有权绑定：新控制、续约、会话释放和用户明确恢复自动是不同操作。客户端只能续约或释放自己持有的会话；旧版助手需先升级，应用不会把过期协议当作可用控制通道。控制请求仍须通过有效风扇、转速范围、温度保护和租约检查；被助手终止后不应自动重放旧目标。各机型的控制路径和阈值以 [兼容性](COMPATIBILITY.md) 与 [硬件验证](HARDWARE_VALIDATION.md) 为准。
 
-## 使用与卸载
+## 管理员脚本接口
 
-推荐先在只读模式确认本机传感器与 RPM 有效，再安装助手。首次试用手动模式时观察读数是否响应，并测试返回自动模式。运行其他风扇控制软件之前先停止这里的手动控制。
+```bash
+sudo ./scripts/install-helper.sh "/Applications/Mac Control Pro.app"
+sudo ./scripts/install-helper.sh "/Applications/Mac Control Pro.app" --uid USER_ID
+```
 
-卸载前在应用中选择 Apple 自动，然后运行：
+未给 `--uid` 时，显式 sudo 方式使用调用账户；没有 sudo 环境时才读取当前控制台账户。原生包传入已验证的控制台 UID。
+
+安装器内部使用 `install-helper.sh --helper ABSOLUTE_HELPER_PATH --uid USER_ID`，源文件先复制到 root 拥有的位置并验证，才替换系统助手。该接口仅供已获管理员授权的安装过程使用。
+
+## 恢复与卸载
+
+设置中的卸载入口打开应用内置 `Uninstall Fan Helper.pkg`，由 macOS 安装器请求管理员验证。它只移除服务及助手系统文件，保留应用和个人设置。
+
+助手在写入前原子保存所持有的风扇 ID。launchd 重启助手后，它验证日志的类型、所有者、大小和 ID，再尝试恢复遗留控制；失败项保留以便重试。
 
 ```bash
 sudo ./scripts/uninstall-helper.sh
 ```
 
-脚本先 `launchctl bootout`，确认进程结束、服务已卸载且恢复日志为空，再删除已知的助手、plist、socket 和日志路径。它不递归删除系统目录。若恢复失败或无法确认硬件模式，可重启 Mac 以重新由固件初始化；请以实际硬件读数为准。
+卸载与安装共用互斥锁，验证已知系统路径后停止服务，等待进程结束，并确认恢复日志为空。未完成恢复时不会删除文件，并尝试重新启动保留的服务。脚本不递归删除系统目录，不清除用户设置。
 
-## 崩溃恢复
-
-助手在写入硬件前原子保存所拥有的风扇 ID，日志不包含用户文件或命令。若进程崩溃或被强制终止，launchd 会重新启动助手；新进程验证日志的所有者、大小和 ID 范围，然后尝试把遗留的自定义控制恢复为自动。成功恢复后再移除记录，失败的记录保留以便重试。
-
-安装替换与卸载脚本都会等待旧助手的 SIGTERM 清理。卸载发现日志仍有未恢复的风扇 ID 时会停止删除，保留助手及日志，并提示重新启动服务进行恢复。该机制依旧取决于底层 SMC 写入成功；未经真实硬件验证的异常路径不宣称已通过测试。
-
-## 安全边界
-
-助手授权的是当前用户账户，而非某个应用签名：同一已授权本地用户的其他进程也可能连接 socket。其他普通用户不应能控制风扇。拥有 root 权限的进程已在本项目边界之外。保护机制无法保证底层硬件调用始终成功，详细局限见 [兼容性](COMPATIBILITY.md)。
-
-安全问题请按 [SECURITY.md](../SECURITY.md) 私密反馈。
+所有恢复最终取决于 SMC / 固件接受写入。单台机器的成功结果不代表睡眠、内核阻塞、强制结束助手等所有路径都已验证。安全问题见 [SECURITY.md](../SECURITY.md)。

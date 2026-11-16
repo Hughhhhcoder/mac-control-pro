@@ -17,6 +17,8 @@ jobs:
         run: swift test
       - name: Package universal application
         run: ./scripts/build-release.sh
+      - name: Check native installer structure without installing
+        run: ./scripts/test-installer.sh dist/*.pkg dist/*.zip
       - name: Upload development packages
         uses: actions/upload-artifact@v4
         with:
@@ -24,6 +26,7 @@ jobs:
           path: |
             dist/*.zip
             dist/*.dmg
+            dist/*.pkg
             dist/*.sha256
           if-no-files-found: error
           retention-days: 14

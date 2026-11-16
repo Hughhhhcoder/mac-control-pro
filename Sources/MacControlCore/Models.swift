@@ -3,15 +3,56 @@ import Foundation
 public struct FanReading: Identifiable, Codable, Sendable {
     public var id: Int
     public var name: String
-    public var currentRPM: Double
-    public var minRPM: Double
-    public var maxRPM: Double
+    public var currentRPM: Double?
+    public var minRPM: Double?
+    public var maxRPM: Double?
     public var targetRPM: Double?
     public var isManual: Bool
-    public init(id: Int, name: String, currentRPM: Double, minRPM: Double, maxRPM: Double, targetRPM: Double? = nil, isManual: Bool = false) {
-        self.id = id; self.name = name; self.currentRPM = currentRPM; self.minRPM = minRPM; self.maxRPM = maxRPM; self.targetRPM = targetRPM; self.isManual = isManual
+    public var modeRawValue: Int?
+    public var modeKey: String?
+    public var targetKey: String?
+
+    public init(id: Int, name: String, currentRPM: Double?, minRPM: Double?, maxRPM: Double?, targetRPM: Double? = nil,
+                isManual: Bool = false, modeRawValue: Int? = nil, modeKey: String? = nil, targetKey: String? = nil) {
+        self.id = id; self.name = name; self.currentRPM = currentRPM; self.minRPM = minRPM; self.maxRPM = maxRPM
+        self.targetRPM = targetRPM; self.isManual = isManual; self.modeRawValue = modeRawValue; self.modeKey = modeKey; self.targetKey = targetKey
+    }
+
+    public var hasValidBounds: Bool {
+        guard let minimum = minRPM, let maximum = maxRPM else { return false }
+        return minimum.isFinite && maximum.isFinite && minimum >= 0 && maximum > minimum && maximum <= 30_000
+    }
+    public var manualMinimumRPM: Double? {
+        guard let minimum = minRPM, let maximum = maxRPM else { return nil }
+        return FanControlPolicy.manualMinimumRPM(minimumRPM: minimum, maximumRPM: maximum)
+    }
+    /// This describes readable control prerequisites, not a claim that a firmware write has succeeded.
+    public var canRequestControl: Bool { controlIssue == nil }
+    public var controlIssue: String? {
+        guard let actual = currentRPM, actual.isFinite, actual >= 0 else { return "Actual fan speed is unavailable." }
+        guard hasValidBounds else { return "Valid minimum and maximum fan speeds are unavailable." }
+        guard let minimum = manualMinimumRPM, let maximum = maxRPM, minimum > 0, minimum <= maximum else { return "A positive manual fan range is unavailable." }
+        guard modeKey != nil, let mode = modeRawValue else { return "No supported fan mode key is readable." }
+        guard [0, 1, 3].contains(mode) else { return "Fan mode \(mode) is not a recognized automatic, manual or system state." }
+        guard targetKey != nil else { return "No supported writable fan target key is readable." }
+        return nil
     }
 }
+
+public struct FanInventory: Sendable {
+    public let fans: [FanReading]
+    public let reportedFanCount: Int?
+    public let message: String
+    public init(fans: [FanReading], reportedFanCount: Int?, message: String) {
+        self.fans = fans; self.reportedFanCount = reportedFanCount; self.message = message
+    }
+}
+
+public enum FanSetResult: Sendable {
+    case applied
+    case pending(retryAfter: TimeInterval, message: String)
+}
+
 public struct TemperatureReading: Identifiable, Codable, Sendable {
     public var id: String
     public var name: String
@@ -35,8 +76,12 @@ public struct SystemSnapshot: Codable, Sendable {
     public var hardwareModel: String
     public var chipName: String
     public var smcStatus: String
-    public init(date: Date, cpuUsage: Double?, memoryUsedBytes: UInt64, memoryTotalBytes: UInt64, batteryPercent: Double?, isOnACPower: Bool?, thermalState: String, uptime: Double, fans: [FanReading], temperatures: [TemperatureReading], hardwareModel: String, chipName: String, smcStatus: String) {
+    public var reportedFanCount: Int?
+    public var fanDiscoveryMessage: String?
+    public var smcAvailable: Bool?
+    public init(date: Date, cpuUsage: Double?, memoryUsedBytes: UInt64, memoryTotalBytes: UInt64, batteryPercent: Double?, isOnACPower: Bool?, thermalState: String, uptime: Double, fans: [FanReading], temperatures: [TemperatureReading], hardwareModel: String, chipName: String, smcStatus: String, reportedFanCount: Int? = nil, fanDiscoveryMessage: String? = nil, smcAvailable: Bool? = nil) {
         self.date = date; self.cpuUsage = cpuUsage; self.memoryUsedBytes = memoryUsedBytes; self.memoryTotalBytes = memoryTotalBytes; self.batteryPercent = batteryPercent; self.isOnACPower = isOnACPower; self.thermalState = thermalState; self.uptime = uptime; self.fans = fans; self.temperatures = temperatures; self.hardwareModel = hardwareModel; self.chipName = chipName; self.smcStatus = smcStatus
+        self.reportedFanCount = reportedFanCount; self.fanDiscoveryMessage = fanDiscoveryMessage; self.smcAvailable = smcAvailable
     }
 }
 

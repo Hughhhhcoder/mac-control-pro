@@ -98,7 +98,7 @@ struct OverviewView: View {
         }
         FansView(compact: true)
         HStack(spacing: 14) {
-            Banner(symbol: "checkmark.shield", title: model.activeCount == 0 ? model.text("系统自动散热", "Automatic cooling") : model.text("自定义散热已启用", "Custom cooling is active"), detail: model.text("控制服务在通信超时、温度过高或传感器丢失时尝试恢复自动。", "The helper attempts to restore automatic mode on timeout, high temperature or sensor loss."))
+            Banner(symbol: "checkmark.shield", title: model.coolingSummary, detail: model.text("控制服务在通信超时、温度过高或传感器丢失时尝试恢复自动。", "The helper attempts to restore automatic mode on timeout, high temperature or sensor loss."))
             Banner(symbol: model.snapshot.isOnACPower == true ? "powerplug" : "battery.75percent", title: model.snapshot.isOnACPower == true ? model.text("已连接电源", "Power adapter") : model.text("电池供电 / 未知", "Battery / unavailable"), detail: model.snapshot.batteryPercent.map { model.text("电量 ", "Charge ") + String(format: "%.0f%%", $0) } ?? model.text("设备未报告电池状态", "Battery status is not reported"), color: .blue)
         }
     }
