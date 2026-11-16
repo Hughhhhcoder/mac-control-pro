@@ -1,0 +1,689 @@
+{
+  "version": "0.2.0",
+  "hardware": "Mac18,1 / Apple M6",
+  "plotted_scenarios": [
+    "fixed",
+    "curve",
+    "lease",
+    "ownership",
+    "gui-high-temperature-restore"
+  ],
+  "evidence_build": {
+    "label": "0.2.0 helper and CLI hardware validation",
+    "source_directory": "hardware-validation-v020-verified",
+    "candidate_binaries": {
+      "Contents/MacOS/MacControlPro": "8cb23e73b23c2cb02e8ca33d2eb291629ea6f18c11e935e5aa073a33fa3021f0",
+      "Contents/MacOS/MacControlCLI": "95a8225d304797d478da4eef1104f6d82173e1e6495ede8770cc16191bfa6817",
+      "Contents/Library/LaunchServices/MacControlHelper": "1c51126691fe2a959ec511c4ac934f2b0b786f57759ef38e7faff595755b38f8"
+    },
+    "cli_tested_binaries": {
+      "Contents/MacOS/MacControlPro": "b750da9aaf744f9b8650a9dfb0cf3f9029f5f2469d9bae8e3dd82d0416a9b6b7",
+      "Contents/MacOS/MacControlCLI": "95a8225d304797d478da4eef1104f6d82173e1e6495ede8770cc16191bfa6817",
+      "Contents/Library/LaunchServices/MacControlHelper": "1c51126691fe2a959ec511c4ac934f2b0b786f57759ef38e7faff595755b38f8"
+    }
+  },
+  "notes": [
+    "All observations are measured input records. No readings are generated, filled or smoothed.",
+    "CLI command dates have one-second precision; command offsets derived from UTC carry that resolution.",
+    "Convergence tolerance is max(150 RPM, 5 percent of target). It describes readback, not a universal hardware guarantee.",
+    "Final mode and lease outcomes are copied from each completed test summary where available."
+  ],
+  "scenarios": {
+    "curve": {
+      "observer_rows": 34,
+      "manual_mode_samples": 32,
+      "fans": {
+        "0": {
+          "samples": 34,
+          "actual_rpm": {
+            "min": 2494.0,
+            "max": 6224.0
+          },
+          "target_rpm": {
+            "min": 2500.0,
+            "max": 6253.0
+          },
+          "modes": [
+            0,
+            1
+          ],
+          "first_manual_seconds": 0.5104723330005072,
+          "first_within_5percent_or_150rpm_seconds": 2.02278350002598,
+          "convergence_after_first_manual_seconds": 1.512311167025473,
+          "last_five_manual_samples_mean_rpm": 5941.6,
+          "last_five_manual_samples_max_target_error_rpm": 130.0,
+          "last_observed_mode": 0
+        }
+      },
+      "tcm_b_celsius": {
+        "min": 57.078125,
+        "max": 66.12812805175781
+      },
+      "tvd_0_celsius": {
+        "min": 57.078125,
+        "max": 66.42500305175781
+      },
+      "requested_rpm": {
+        "min": 5875,
+        "max": 6253.359317779541
+      },
+      "helper_states": {
+        "applied": 8,
+        "released": 1
+      },
+      "test_summary": {
+        "mode": "curve",
+        "firstManual": 0.5104723330005072,
+        "killedAt": null,
+        "automaticAt": 16.67776541603962,
+        "automaticAfterKill": null,
+        "controlExit": 0,
+        "competitorExit": null,
+        "finalManual": false,
+        "finalLeases": []
+      },
+      "result": null,
+      "final_state": {
+        "hardware_model": "Mac18,1",
+        "chip": "Apple M6",
+        "helper_version": "0.2.0",
+        "protocol_version": 2,
+        "helper_ok": true,
+        "owned_fan_ids": [],
+        "fan_modes": {
+          "0": 0
+        },
+        "manual_fan_ids": []
+      }
+    },
+    "fixed": {
+      "observer_rows": 38,
+      "manual_mode_samples": 35,
+      "fans": {
+        "0": {
+          "samples": 38,
+          "actual_rpm": {
+            "min": 2499.0,
+            "max": 5513.0
+          },
+          "target_rpm": {
+            "min": 2500.0,
+            "max": 5500.0
+          },
+          "modes": [
+            0,
+            1
+          ],
+          "first_manual_seconds": 0.5064031250076368,
+          "first_within_5percent_or_150rpm_seconds": 1.5128997919964604,
+          "convergence_after_first_manual_seconds": 1.0064966669888236,
+          "last_five_manual_samples_mean_rpm": 5504.0,
+          "last_five_manual_samples_max_target_error_rpm": 13.0,
+          "last_observed_mode": 0
+        }
+      },
+      "tcm_b_celsius": {
+        "min": 61.171875,
+        "max": 76.80000305175781
+      },
+      "tvd_0_celsius": {
+        "min": 60.5,
+        "max": 76.80000305175781
+      },
+      "requested_rpm": {
+        "min": 5500,
+        "max": 5500
+      },
+      "helper_states": {
+        "applied": 9,
+        "released": 1
+      },
+      "test_summary": {
+        "mode": "fixed",
+        "firstManual": 0.5064031250076368,
+        "killedAt": null,
+        "automaticAt": 18.237967249995563,
+        "automaticAfterKill": null,
+        "controlExit": 0,
+        "competitorExit": null,
+        "finalManual": false,
+        "finalLeases": []
+      },
+      "result": null,
+      "final_state": {
+        "hardware_model": "Mac18,1",
+        "chip": "Apple M6",
+        "helper_version": "0.2.0",
+        "protocol_version": 2,
+        "helper_ok": true,
+        "owned_fan_ids": [],
+        "fan_modes": {
+          "0": 0
+        },
+        "manual_fan_ids": []
+      }
+    },
+    "guarded-gui-attempt": {
+      "observer_rows": 238,
+      "manual_mode_samples": 0,
+      "fans": {
+        "0": {
+          "samples": 238,
+          "actual_rpm": {
+            "min": 0.0,
+            "max": 0.0
+          },
+          "target_rpm": {
+            "min": 0.0,
+            "max": 5500.0
+          },
+          "modes": [
+            0
+          ],
+          "first_manual_seconds": null,
+          "first_within_5percent_or_150rpm_seconds": null,
+          "convergence_after_first_manual_seconds": null,
+          "last_five_manual_samples_mean_rpm": null,
+          "last_five_manual_samples_max_target_error_rpm": null,
+          "last_observed_mode": 0
+        }
+      },
+      "tcm_b_celsius": {
+        "min": 57.68437576293945,
+        "max": 88.86250305175781
+      },
+      "tvd_0_celsius": {
+        "min": 57.68437576293945,
+        "max": 88.86250305175781
+      },
+      "requested_rpm": null,
+      "helper_states": {},
+      "test_summary": {
+        "mode": "observe",
+        "firstManual": null,
+        "killedAt": null,
+        "automaticAt": null,
+        "automaticAfterKill": null,
+        "controlExit": null,
+        "competitorExit": null,
+        "finalManual": false,
+        "finalLeases": []
+      },
+      "result": {
+        "observedResult": "temperature_protection_recovered_automatic",
+        "manualModeSamplesObserved": 0,
+        "recoveryCode": "temperature_limit",
+        "recoveryReason": "The highest temperature is 86.0°C; manual control is blocked at 85°C. Use system automatic mode.",
+        "finalManualFanIDs": []
+      },
+      "final_state": {
+        "hardware_model": "Mac18,1",
+        "chip": "Apple M6",
+        "helper_version": "0.2.0",
+        "protocol_version": 2,
+        "helper_ok": true,
+        "owned_fan_ids": [],
+        "fan_modes": {
+          "0": 0
+        },
+        "manual_fan_ids": []
+      }
+    },
+    "gui-high-temperature-restore": {
+      "observer_rows": 238,
+      "manual_mode_samples": 0,
+      "fans": {
+        "0": {
+          "samples": 238,
+          "actual_rpm": {
+            "min": 3562.0,
+            "max": 4941.0
+          },
+          "target_rpm": {
+            "min": 3558.0,
+            "max": 4944.0
+          },
+          "modes": [
+            0
+          ],
+          "first_manual_seconds": null,
+          "first_within_5percent_or_150rpm_seconds": null,
+          "convergence_after_first_manual_seconds": null,
+          "last_five_manual_samples_mean_rpm": null,
+          "last_five_manual_samples_max_target_error_rpm": null,
+          "last_observed_mode": 0
+        }
+      },
+      "tcm_b_celsius": {
+        "min": 91.28437805175781,
+        "max": 104.22187805175781
+      },
+      "tvd_0_celsius": {
+        "min": 91.28437805175781,
+        "max": 104.22187805175781
+      },
+      "requested_rpm": null,
+      "helper_states": {},
+      "test_summary": {
+        "mode": "observe",
+        "firstManual": null,
+        "killedAt": null,
+        "automaticAt": null,
+        "automaticAfterKill": null,
+        "controlExit": null,
+        "competitorExit": null,
+        "finalManual": false,
+        "finalLeases": []
+      },
+      "result": {
+        "observedResult": "automatic_mode_confirmed_during_temperature_protection",
+        "guiAction": "restore_all_automatic",
+        "manualControlAttempted": false,
+        "manualControlConfirmed": false,
+        "automaticModeConfirmed": true,
+        "manualModeSamplesObserved": 0,
+        "observationSamples": 238,
+        "controlBlockCode": "temperature_limit",
+        "controlBlockReason": "The highest temperature is 97.4°C; manual control is blocked at 85°C. Use system automatic mode.",
+        "temperatureLimitCelsius": 85,
+        "finalHottestTemperatureCelsius": 97.42500305175781,
+        "maximumObservedTCMbCelsius": 104.22187805175781,
+        "maximumObservedTVD0Celsius": 104.22187805175781,
+        "finalFanModes": {
+          "0": 0
+        },
+        "finalManualFanIDs": []
+      },
+      "final_state": {
+        "hardware_model": "Mac18,1",
+        "chip": "Apple M6",
+        "helper_version": "0.2.0",
+        "protocol_version": 2,
+        "helper_ok": true,
+        "owned_fan_ids": [],
+        "fan_modes": {
+          "0": 0
+        },
+        "manual_fan_ids": []
+      }
+    },
+    "lease": {
+      "observer_rows": 30,
+      "manual_mode_samples": 28,
+      "fans": {
+        "0": {
+          "samples": 30,
+          "actual_rpm": {
+            "min": 0.0,
+            "max": 5504.0
+          },
+          "target_rpm": {
+            "min": 0.0,
+            "max": 5500.0
+          },
+          "modes": [
+            0,
+            1
+          ],
+          "first_manual_seconds": 0.5103055000072345,
+          "first_within_5percent_or_150rpm_seconds": 9.597581916023046,
+          "convergence_after_first_manual_seconds": 9.087276416015811,
+          "last_five_manual_samples_mean_rpm": 5499.2,
+          "last_five_manual_samples_max_target_error_rpm": 4.0,
+          "last_observed_mode": 0
+        }
+      },
+      "tcm_b_celsius": {
+        "min": 52.984375,
+        "max": 62.51874923706055
+      },
+      "tvd_0_celsius": {
+        "min": 52.984375,
+        "max": 62.51874923706055
+      },
+      "requested_rpm": {
+        "min": 5500,
+        "max": 5500
+      },
+      "helper_states": {
+        "applied": 2
+      },
+      "test_summary": {
+        "mode": "lease",
+        "firstManual": 0.5103055000072345,
+        "killedAt": 2.5294468330102973,
+        "automaticAt": 14.658498875040095,
+        "automaticAfterKill": 12.129052042029798,
+        "controlExit": -9,
+        "competitorExit": null,
+        "finalManual": false,
+        "finalLeases": []
+      },
+      "result": null,
+      "final_state": {
+        "hardware_model": "Mac18,1",
+        "chip": "Apple M6",
+        "helper_version": "0.2.0",
+        "protocol_version": 2,
+        "helper_ok": true,
+        "owned_fan_ids": [],
+        "fan_modes": {
+          "0": 0
+        },
+        "manual_fan_ids": []
+      }
+    },
+    "ownership": {
+      "observer_rows": 37,
+      "manual_mode_samples": 35,
+      "fans": {
+        "0": {
+          "samples": 37,
+          "actual_rpm": {
+            "min": 2498.0,
+            "max": 5513.0
+          },
+          "target_rpm": {
+            "min": 2500.0,
+            "max": 5500.0
+          },
+          "modes": [
+            0,
+            1
+          ],
+          "first_manual_seconds": 0.5123828329960816,
+          "first_within_5percent_or_150rpm_seconds": 1.5241924579604529,
+          "convergence_after_first_manual_seconds": 1.0118096249643713,
+          "last_five_manual_samples_mean_rpm": 5501.2,
+          "last_five_manual_samples_max_target_error_rpm": 8.0,
+          "last_observed_mode": 0
+        }
+      },
+      "tcm_b_celsius": {
+        "min": 53.953125,
+        "max": 60.40937423706055
+      },
+      "tvd_0_celsius": {
+        "min": 53.46562576293945,
+        "max": 58.72187423706055
+      },
+      "requested_rpm": {
+        "min": 5500,
+        "max": 5500
+      },
+      "helper_states": {
+        "applied": 9,
+        "released": 1
+      },
+      "test_summary": {
+        "mode": "ownership",
+        "firstManual": 0.5123828329960816,
+        "killedAt": null,
+        "automaticAt": 18.703583124966826,
+        "automaticAfterKill": null,
+        "controlExit": 0,
+        "competitorExit": 1,
+        "finalManual": false,
+        "finalLeases": []
+      },
+      "result": null,
+      "final_state": {
+        "hardware_model": "Mac18,1",
+        "chip": "Apple M6",
+        "helper_version": "0.2.0",
+        "protocol_version": 2,
+        "helper_ok": true,
+        "owned_fan_ids": [],
+        "fan_modes": {
+          "0": 0
+        },
+        "manual_fan_ids": []
+      }
+    }
+  },
+  "command_scenarios": {
+    "curve": {
+      "events": 9,
+      "helper_states": {
+        "applied": 8,
+        "released": 1
+      },
+      "helper_errors": {},
+      "successful_events": 9,
+      "rejected_events": 0,
+      "requested_rpm": {
+        "min": 5875,
+        "max": 6253.359317779541
+      },
+      "source_celsius": {
+        "min": 57.5,
+        "max": 63.37812423706055
+      }
+    },
+    "fixed": {
+      "events": 10,
+      "helper_states": {
+        "applied": 9,
+        "released": 1
+      },
+      "helper_errors": {},
+      "successful_events": 10,
+      "rejected_events": 0,
+      "requested_rpm": {
+        "min": 5500,
+        "max": 5500
+      },
+      "source_celsius": null
+    },
+    "lease": {
+      "events": 2,
+      "helper_states": {
+        "applied": 2
+      },
+      "helper_errors": {},
+      "successful_events": 2,
+      "rejected_events": 0,
+      "requested_rpm": {
+        "min": 5500,
+        "max": 5500
+      },
+      "source_celsius": null
+    },
+    "ownership": {
+      "events": 10,
+      "helper_states": {
+        "applied": 9,
+        "released": 1
+      },
+      "helper_errors": {},
+      "successful_events": 10,
+      "rejected_events": 0,
+      "requested_rpm": {
+        "min": 5500,
+        "max": 5500
+      },
+      "source_celsius": null
+    },
+    "ownership-competitor": {
+      "events": 3,
+      "helper_states": {
+        "blocked": 1,
+        "released": 1
+      },
+      "helper_errors": {
+        "lease_owned_by_another_client": 1
+      },
+      "successful_events": 1,
+      "rejected_events": 1,
+      "requested_rpm": {
+        "min": 6000,
+        "max": 6000
+      },
+      "source_celsius": null
+    }
+  },
+  "evidence_scope": {
+    "measured_scenarios": [
+      "curve",
+      "fixed",
+      "guarded-gui-attempt",
+      "gui-high-temperature-restore",
+      "lease",
+      "ownership"
+    ],
+    "gui_control_logs_present": true,
+    "gui_manual_mode_samples": 0,
+    "gui_fixed_control_verified": false,
+    "gui_curve_control_verified": false,
+    "hardware_models": [
+      "Mac18,1"
+    ],
+    "gaps": [
+      "No successful v0.2.0 GUI fixed-speed hardware measurement is present.",
+      "No successful v0.2.0 GUI temperature-curve hardware measurement is present.",
+      "No physical M4 Pro, Intel, multi-fan, or other-model measurement logs are present in this evidence folder."
+    ]
+  },
+  "source_files": {
+    "candidate-binaries.json": {
+      "sha256": "cc3020f6e6555e50198cec301e3e9a248b6a94ab39bc02d60f634f13588a4293",
+      "bytes": 328
+    },
+    "cli-tested-binaries.json": {
+      "sha256": "6320404160d1006d79bdb7824dfc765274c32f3fe863aaa90f149fc1ccdc019d",
+      "bytes": 328
+    },
+    "curve-control.jsonl": {
+      "sha256": "ea3d3e0e0977ba6af7401cb071c6595c7b3faa9c21edbef7709fc0baab799254",
+      "bytes": 114352
+    },
+    "curve-control.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "curve-final.json": {
+      "sha256": "7f75b93dfca60726db56a29f2aef94bfb950e443d26909ccaa6e906c916ce23c",
+      "bytes": 21479
+    },
+    "curve-raw.jsonl": {
+      "sha256": "d4993661ef08cbff5f8c533a191179f7b75a2a53a33d34c015658ecdd7d8dca3",
+      "bytes": 6652
+    },
+    "curve-summary.json": {
+      "sha256": "40d17b73b3fb1592b44e65ca08284721d60885fc56e6517c2716586b89942fbb",
+      "bytes": 235
+    },
+    "final-registers.json": {
+      "sha256": "8bc665253e6b63f46134996fc68af80c272a64c4c74471173e772583b5674674",
+      "bytes": 80
+    },
+    "fixed-control.jsonl": {
+      "sha256": "5ac099b1b0453b307a9d661b545c09beb26ddd2270599ba9800865c94ee609d2",
+      "bytes": 126221
+    },
+    "fixed-control.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "fixed-final.json": {
+      "sha256": "c4dcdac4f50b5aa35c44d0619bb4dd9ca1e61f2685ea40963c5ffa49515e2e7d",
+      "bytes": 21417
+    },
+    "fixed-raw.jsonl": {
+      "sha256": "0ba2feea538d3453d9ce910fb2b820b3ea0413fe58c67330b53d21dee7b91e55",
+      "bytes": 7619
+    },
+    "fixed-summary.json": {
+      "sha256": "de2c794b349b7750058401c8de516b95c91089c72c9568cb77300b4c2e846384",
+      "bytes": 236
+    },
+    "guarded-gui-attempt-final.json": {
+      "sha256": "4205ce47054d29456e91484e40b6efaa0a2c96ca8ef056a89607e685cdfaefe8",
+      "bytes": 21478
+    },
+    "guarded-gui-attempt-raw.jsonl": {
+      "sha256": "ff500958f037ec8bd7595bd6eea884c4addd0fe320fb08e8e5c2e8904ee0e1a4",
+      "bytes": 45807
+    },
+    "guarded-gui-attempt-result.json": {
+      "sha256": "982f90591d6d871f9a9cd441ea894782d4f777942722913c349dbe1002b213dd",
+      "bytes": 298
+    },
+    "guarded-gui-attempt-summary.json": {
+      "sha256": "9d453bf355fcc8904c990234b08aaad161da726e223e45e4c0d4284e9b8d486e",
+      "bytes": 213
+    },
+    "gui-high-temperature-restore-final.json": {
+      "sha256": "e56b858cad679f727a05f9786b4ee7f50c616f36319b862b4a66c78fa0bb450e",
+      "bytes": 21607
+    },
+    "gui-high-temperature-restore-raw.jsonl": {
+      "sha256": "ba588e767ea51439ec719a4c417b11b1e687f06aa38fef2a6a7510e41cc13a77",
+      "bytes": 48130
+    },
+    "gui-high-temperature-restore-result.json": {
+      "sha256": "a6f414ade96139b6d374e76b0432ef9ca15c183dbbef9e4e30b770a4b9dc5599",
+      "bytes": 713
+    },
+    "gui-high-temperature-restore-summary.json": {
+      "sha256": "9d453bf355fcc8904c990234b08aaad161da726e223e45e4c0d4284e9b8d486e",
+      "bytes": 213
+    },
+    "installed-status.json": {
+      "sha256": "499774a5cc0be458062fec3ea714bc7b2127af6f47af738c6fb8a4fcbb7e1a6c",
+      "bytes": 21500
+    },
+    "lease-control.jsonl": {
+      "sha256": "e257708684382adb1c2856d3180571564bf656d8fe46c22709e8ff7bc0b66eeb",
+      "bytes": 25284
+    },
+    "lease-control.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "lease-final.json": {
+      "sha256": "498457819d446b7878a825896a6cf7ba9427f015fe32f0d0100e10c191375f32",
+      "bytes": 21621
+    },
+    "lease-raw.jsonl": {
+      "sha256": "3d4017a03bbe138551fdab66152d9540192251c34519880782de804e345a83b3",
+      "bytes": 5869
+    },
+    "lease-summary.json": {
+      "sha256": "6d86ba12c08f9278b8d63ae23068cf224163c19a2fe0dc3b445bc03b5fa498e6",
+      "bytes": 265
+    },
+    "ownership-competitor.jsonl": {
+      "sha256": "4b25c88a623cec2802fe3ae87ed14978d7eff4060d856d16b3fe39f119ce4fd4",
+      "bytes": 25332
+    },
+    "ownership-competitor.stderr": {
+      "sha256": "2711012bc378451b4f84967fc9abe3bac0b9dbd55909612ced20421e6dd50eb7",
+      "bytes": 88
+    },
+    "ownership-control.jsonl": {
+      "sha256": "c9e5fe73a6b5077e571921916f9e25740a16892b21c0fd04c82662320ac9e3ee",
+      "bytes": 126313
+    },
+    "ownership-control.stderr": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    "ownership-final.json": {
+      "sha256": "71696e1dde4d9a383464464d895931e9c62fbbbcc3ccb369adc69930a22520dc",
+      "bytes": 21472
+    },
+    "ownership-raw.jsonl": {
+      "sha256": "4c975ad88ef9a6a3265e5d83bd2013d79db7c36a8a5ea7cd3223e3b08059e888",
+      "bytes": 7189
+    },
+    "ownership-summary.json": {
+      "sha256": "0b80d4620aab9680304e7a4a8b60a05aa97197a03e993c9022d2128ea258a51a",
+      "bytes": 237
+    },
+    "source-manifest.json": {
+      "sha256": "38983b0dd8d07e557232f8c743242ac1d4953df4adb531b07fdc2e557f4b9dee",
+      "bytes": 3727
+    }
+  }
+}

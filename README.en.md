@@ -29,11 +29,11 @@ Requires **macOS 14 or later**. Universal downloads contain arm64 and x86_64 bin
 
 Version 0.2.0 implements separate fan discovery and control, dual-fan paths relevant to M4 Pro models, protected-mode handling, desktop speed ranges for Mac mini / Mac Studio, and fanless Air monitoring. Presets adapt to each fan instead of applying a notebook's absolute RPM to every Mac.
 
-**Implemented paths are not a guarantee that every recent Mac has been physically tested.** Physical records come from **Mac18,1 / Apple M6 / macOS 27.0**: version 0.1.1 covers fixed speeds, curves, automatic recovery and lost-client lease expiry; an early 0.2.0 candidate also has CLI fixed-speed, curve, lease-expiry and competing-session rejection records. Each result applies to the tested build. M4 Pro, Mac mini, Mac Studio, other Mac models and Intel writes remain covered by simulated code paths, without physical pass records on those machines.
+**Implemented paths are not a guarantee that every recent Mac has been physically tested.** Physical records come from **Mac18,1 / Apple M6 / macOS 27.0**: the 0.2.0 helper and CLI have verified 5500 RPM control, a temperature curve, rejection of a competing session, and automatic recovery observed about 12.129 seconds after the client was killed. The 0.2.0 GUI currently has a thermal-protection result, with no successful GUI control record; successful 0.1.1 GUI runs remain separately documented. M4 Pro, Mac mini, Mac Studio, other Mac models and Intel writes remain covered by simulated code paths, without physical pass records on those machines.
 
 [Compatibility matrix](docs/COMPATIBILITY.md) · [Hardware evidence](docs/HARDWARE_VALIDATION.md) · [Test scope](docs/TESTING.md)
 
-The app distinguishes a missing or outdated helper, unavailable readings, read-only fans, pending requests and confirmed application. P2 sessions bind renewal and release to their owner. Losing a lease or encountering a protection condition does not silently replay the previous target. SMC is undocumented; firmware may reject writes or recovery. See [helper design](docs/HELPER.md).
+The app distinguishes a missing or outdated helper, unavailable readings, read-only fans, pending requests and confirmed application. P2 sessions bind renewal and release to their owner. Lease loss reports the recovery reason from the same response; historical recovery details do not mask unrelated new errors. Stale status snapshots cannot cancel a newly applied policy, while current safety recovery still stops the old policy without replaying its target. SMC is undocumented; firmware may reject writes or recovery. See [helper design](docs/HELPER.md).
 
 ## Build
 

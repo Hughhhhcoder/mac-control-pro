@@ -30,6 +30,7 @@ import UniformTypeIdentifiers
     private let preferences: UserDefaults
     private let persistsPreferences: Bool
     private let automaticallySamples: Bool
+    private let refreshDeliveryGate: (@MainActor @Sendable () async -> Void)?
     private let queue = DispatchQueue(label: "io.github.hughhhhcoder.monitor", qos: .utility)
     private var timer: Timer?
     private var observers: [NSObjectProtocol] = []
@@ -92,12 +93,13 @@ import UniformTypeIdentifiers
         return nil
     }
 
-    init(monitor: any HardwareSource = HardwareMonitor(), helperClient: any FanService = HelperClient(), preferences: UserDefaults = .standard, startsAutomatically: Bool = true, persistsPreferences: Bool = true, demoMode: Bool? = nil) {
+    init(monitor: any HardwareSource = HardwareMonitor(), helperClient: any FanService = HelperClient(), preferences: UserDefaults = .standard, startsAutomatically: Bool = true, persistsPreferences: Bool = true, demoMode: Bool? = nil, refreshDeliveryGate: (@MainActor @Sendable () async -> Void)? = nil) {
         self.monitor = monitor
         self.helperClient = helperClient
         self.preferences = preferences
         self.persistsPreferences = persistsPreferences
         self.automaticallySamples = startsAutomatically
+        self.refreshDeliveryGate = refreshDeliveryGate
         let useDemo = demoMode ?? ProcessInfo.processInfo.arguments.contains("--demo")
         demo = useDemo
         snapshot = useDemo ? HardwareMonitor.demoSnapshot() : monitor.snapshot()
@@ -135,11 +137,13 @@ import UniformTypeIdentifiers
         guard !sampling, !suspended, !paused else { return }
         sampling = true
         let isDemo = demo, generation = monitoringGeneration, monitor = monitor, client = helperClient
+        let controlRevision = controlGeneration, fanRevisions = fanGenerations
         queue.async { [weak self] in
             let current = isDemo ? HardwareMonitor.demoSnapshot() : monitor.snapshot()
             let result: Result<HelperResponse, Error>? = isDemo ? nil : Result { try client.status() }
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                await self.refreshDeliveryGate?()
                 self.sampling = false
                 guard self.monitoringGeneration == generation, self.demo == isDemo, !self.paused, !self.suspended else { return }
                 self.snapshot = current
@@ -147,10 +151,13 @@ import UniformTypeIdentifiers
                 self.record(current)
                 if self.helperAvailable, let response = self.helperResponse {
                     let owned = Set(response.manualFanIDs)
-                    for id in Array(self.policies.keys) where !owned.contains(id) {
+                    for id in Array(self.policies.keys) where !owned.contains(id)
+                        && self.controlGeneration == controlRevision
+                        && self.fanGenerations[id, default: 0] == fanRevisions[id, default: 0]
+                        && !self.inFlight.contains(id) {
                         self.fanGenerations[id, default: 0] += 1
                         self.policies.removeValue(forKey: id)
-                        self.fanActions[id] = .init(phase: .failed, message: self.localizedReason(code: response.lastRecoveryCode?.rawValue, fallback: response.lastRecoveryReason ?? self.text("助手已交还控制，原策略已停止。", "The helper released control. The old policy has stopped.")))
+                        self.fanActions[id] = .init(phase: .failed, message: self.recoveryReason(from: response, fallback: self.text("助手已交还控制，原策略已停止。", "The helper released control. The old policy has stopped.")))
                     }
                 }
                 self.renewPolicies()
@@ -276,7 +283,7 @@ import UniformTypeIdentifiers
             switch result {
             case .failure(let error): await failControl(id, reason: error.localizedDescription); return false
             case .success(let response):
-                guard response.ok else { await failControl(id, reason: localizedReason(code: response.errorCode?.rawValue, fallback: response.message)); return false }
+                guard response.ok else { await failControl(id, reason: controlFailureReason(from: response)); return false }
                 if response.applicationState?.rawValue == "pending" {
                     fanActions[id] = .init(phase: .waiting, message: text("等待固件释放控制…", "Waiting for firmware control…"), requestedRPM: rpm)
                     guard ProcessInfo.processInfo.systemUptime < deadline else { await failControl(id, reason: text("固件未在等待期限内释放控制，已请求恢复自动。", "Firmware did not yield before the deadline. Automatic recovery was requested.")); return false }
@@ -320,7 +327,7 @@ import UniformTypeIdentifiers
                     fanActions[id] = .init(phase: .waiting, message: text("等待固件释放控制…", "Waiting for firmware control…"), requestedRPM: rpm)
                 case .success(let reply) where reply.ok:
                     await failControl(id, reason: text("助手未确认续约设置，已释放本会话的控制。", "The helper did not confirm the renewed setting. This session released control."))
-                case .success(let reply): await failControl(id, reason: localizedReason(code: reply.errorCode?.rawValue, fallback: reply.message))
+                case .success(let reply): await failControl(id, reason: controlFailureReason(from: reply))
                 case .failure(let error): await failControl(id, reason: error.localizedDescription)
                 }
             }
@@ -394,7 +401,26 @@ import UniformTypeIdentifiers
         guard let url = Bundle.main.url(forResource: "Uninstall Fan Helper", withExtension: "pkg"), NSWorkspace.shared.open(url) else { message = text("当前构建未包含卸载包，请使用发行版。", "This build has no removal package. Use the packaged release."); return }
     }
 
-    func localizedReason(code: String?, fallback: String) -> String {
+    private func controlFailureReason(from response: HelperResponse) -> String {
+        // A lease can disappear because the helper already performed a safety recovery.
+        // Recovery metadata must never replace an unrelated new request error.
+        if response.errorCode == .leaseExpired,
+           response.lastRecoveryCode != nil || response.lastRecoveryReason != nil {
+            return recoveryReason(from: response, fallback: response.message)
+        }
+        return localizedReason(code: response.errorCode?.rawValue, fallback: response.message, context: response)
+    }
+    private func recoveryReason(from response: HelperResponse, fallback: String) -> String {
+        let recorded = response.lastRecoveryReason ?? fallback
+        let localized = localizedReason(code: response.lastRecoveryCode?.rawValue, fallback: recorded, context: response)
+        if !english, response.lastRecoveryReason != nil, localized != recorded {
+            // Preserve the event's exact reason, including its measured temperature;
+            // the latest status temperature may already have fallen since recovery.
+            return localized + "\n助手记录的恢复原因：" + recorded
+        }
+        return localized
+    }
+    func localizedReason(code: String?, fallback: String, context: HelperResponse? = nil) -> String {
         guard !english else { return fallback }
         switch code {
         case "helper_not_installed": return "尚未安装控制助手。点击“安装控制助手”并完成系统管理员验证后即可重新检测。"
@@ -402,8 +428,8 @@ import UniformTypeIdentifiers
         case "wrong_user": return "控制助手当前绑定了另一个账号。为当前登录账号重新安装助手即可修复。"
         case "upgrade_required", "protocol_mismatch": return "主应用和控制助手版本不匹配，请更新助手。"
         case "temperature_guard", "temperature_unavailable", "thermal_guard", "temperature_limit", "thermal_pressure":
-            let current = temperature(helperResponse?.hottestTemperatureCelsius ?? peakTemperature)
-            let limit = temperature(helperResponse?.temperatureLimitCelsius ?? 85)
+            let current = temperature((context ?? helperResponse)?.hottestTemperatureCelsius ?? peakTemperature)
+            let limit = temperature((context ?? helperResponse)?.temperatureLimitCelsius ?? 85)
             return "控制保护已生效（当前最高 \(current)，保护阈值 \(limit)）。风扇由系统自动管理；等待温度回落后可重新应用。"
         case "lease_lost", "lease_expired": return "助手已结束控制租约，原策略已停止。请确认原因后重新应用。"
         case "fan_busy", "session_mismatch", "lease_owned_by_another_client": return "这只风扇正由另一个控制会话管理。请先恢复自动，避免多个控制器互相覆盖。"

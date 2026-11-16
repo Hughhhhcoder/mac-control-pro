@@ -101,6 +101,21 @@ private final class FakeService: FanService, @unchecked Sendable {
     }
 }
 
+@MainActor private final class RefreshDeliveryGate {
+    var held = false
+    private(set) var waiting = false
+    private var continuation: CheckedContinuation<Void, Never>?
+    func wait() async {
+        guard held else { return }
+        waiting = true
+        await withCheckedContinuation { continuation = $0 }
+    }
+    func release() {
+        held = false; waiting = false
+        continuation?.resume(); continuation = nil
+    }
+}
+
 final class AppModelTests: XCTestCase {
     private func fan(_ id: Int = 0, minimum: Double? = 2000, maximum: Double? = 8250) -> FanReading {
         FanReading(id: id, name: "Test fan \(id)", currentRPM: 2500, minRPM: minimum, maxRPM: maximum,
@@ -113,10 +128,12 @@ final class AppModelTests: XCTestCase {
                        hardwareModel: "Test Mac", chipName: "Fixture", smcStatus: "In-memory fixture",
                        reportedFanCount: fans.count, smcAvailable: true)
     }
-    @MainActor private func model(service: FakeService, fans: [FanReading]? = nil, preferences: UserDefaults? = nil) -> AppModel {
-        AppModel(monitor: FakeHardware(snapshot(fans: fans ?? [fan()])), helperClient: service,
-                 preferences: preferences ?? UserDefaults(suiteName: "MacControlProTests.\(UUID().uuidString)")!,
-                 startsAutomatically: false, persistsPreferences: false, demoMode: false)
+    @MainActor private func model(service: FakeService, fans: [FanReading]? = nil, preferences: UserDefaults? = nil, refreshGate: RefreshDeliveryGate? = nil) -> AppModel {
+        let delivery: (@MainActor @Sendable () async -> Void)?
+        if let refreshGate { delivery = { await refreshGate.wait() } } else { delivery = nil }
+        return AppModel(monitor: FakeHardware(snapshot(fans: fans ?? [fan()])), helperClient: service,
+                        preferences: preferences ?? UserDefaults(suiteName: "MacControlProTests.\(UUID().uuidString)")!,
+                        startsAutomatically: false, persistsPreferences: false, demoMode: false, refreshDeliveryGate: delivery)
     }
     @MainActor private func waitUntil(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
         let deadline = ProcessInfo.processInfo.systemUptime + 5
@@ -378,4 +395,93 @@ final class AppModelTests: XCTestCase {
         XCTAssertNotNil(app.message)
         XCTAssertTrue(service.calls.contains { $0.operation == .automatic && $0.fanID == 0 })
     }
+
+    private func temperatureRecoveredLease() -> HelperResponse {
+        HelperResponse(ok: false, message: "The control lease ended", protocolVersion: FanControlProtocol.currentVersion,
+                       hottestTemperatureCelsius: 61, errorCode: .leaseExpired, applicationState: .blocked,
+                       lastRecoveryReason: "The highest temperature reached 86.0°C; automatic control was restored.",
+                       lastRecoveryCode: .temperatureLimit)
+    }
+
+    @MainActor func testPendingApplyLeaseLossShowsTheActualTemperatureRecovery() async {
+        let service = FakeService()
+        service.configureSet([.init(ok: true, message: "Waiting", manualFanIDs: [0],
+                                    protocolVersion: FanControlProtocol.currentVersion, applicationState: .pending)])
+        service.configureRenew([temperatureRecoveredLease()])
+        let app = model(service: service); await connect(app)
+        let applied = await app.setFixed(fan(), rpm: 3000)
+        XCTAssertFalse(applied)
+        XCTAssertTrue(app.policies.isEmpty)
+        XCTAssertTrue(app.fanActions[0]?.message.contains("温度") == true)
+        XCTAssertTrue(app.fanActions[0]?.message.contains("86.0°C") == true)
+        XCTAssertFalse(app.fanActions[0]?.message.contains("控制租约") == true)
+        XCTAssertEqual(service.calls.filter { $0.operation == .set }.count, 1)
+        XCTAssertEqual(service.calls.filter { $0.operation == .renew }.count, 1)
+        XCTAssertTrue(service.calls.contains { $0.operation == .release })
+    }
+
+    @MainActor func testActiveRenewLeaseLossShowsRecoveryAndNeverReplaysTheOldTarget() async {
+        let service = FakeService(); let app = model(service: service); await connect(app)
+        let applied = await app.setFixed(fan(), rpm: 3000); XCTAssertTrue(applied)
+        service.configureRenew([temperatureRecoveredLease()])
+        app.refresh()
+        await waitUntil { app.fanActions[0]?.phase == .failed && service.calls.contains { $0.operation == .release } }
+        XCTAssertTrue(app.policies.isEmpty)
+        XCTAssertTrue(app.fanActions[0]?.message.contains("86.0°C") == true)
+        XCTAssertFalse(app.fanActions[0]?.message.contains("控制租约") == true)
+        let sampleCount = app.history.count
+        app.refresh()
+        await waitUntil { app.history.count > sampleCount }
+        XCTAssertEqual(service.calls.filter { $0.operation == .set }.count, 1)
+        XCTAssertEqual(service.calls.filter { $0.operation == .renew }.count, 1)
+    }
+
+    @MainActor func testHistoricalRecoveryDoesNotReplaceAnUnrelatedNewWriteError() async {
+        let service = FakeService()
+        var reply = temperatureRecoveredLease()
+        reply.errorCode = .writeFailed; reply.message = "Firmware refused the new write"
+        service.configureSet([reply])
+        let app = model(service: service); await connect(app)
+        let applied = await app.setFixed(fan(), rpm: 3000)
+        XCTAssertFalse(applied)
+        XCTAssertEqual(app.fanActions[0]?.message, "Firmware refused the new write")
+        XCTAssertFalse(app.fanActions[0]?.message.contains("86.0°C") == true)
+    }
+
+    @MainActor func testDelayedOldStatusCannotRemoveANewlyAppliedPolicy() async {
+        let service = FakeService(), gate = RefreshDeliveryGate()
+        let app = model(service: service, refreshGate: gate); await connect(app)
+        let initial = await app.setFixed(fan(), rpm: 3000); XCTAssertTrue(initial)
+        service.configureStatus(FakeService.ready(owned: []))
+        gate.held = true
+        let sampleCount = app.history.count
+        app.refresh()
+        await waitUntil { gate.waiting }
+        // This status has already returned no ownership, but its MainActor delivery
+        // is delayed until a newer hardware request has completed successfully.
+        let replacement = await app.setFixed(fan(), rpm: 4500)
+        XCTAssertTrue(replacement); XCTAssertEqual(app.policies[0]?.rpm, 4500)
+        service.configureStatus(FakeService.ready(owned: [0]))
+        gate.release()
+        await waitUntil { app.history.count > sampleCount }
+        XCTAssertEqual(app.policies[0]?.rpm, 4500)
+        XCTAssertEqual(app.fanActions[0]?.phase, .active)
+        XCTAssertFalse(service.calls.contains { $0.operation == .release })
+        XCTAssertEqual(service.calls.filter { $0.operation == .set }.map(\.rpm), [3000, 4500])
+    }
+
+    @MainActor func testCurrentStatusStillStopsAnUnchangedPolicyAfterSafetyRecovery() async {
+        let service = FakeService(); let app = model(service: service); await connect(app)
+        let applied = await app.setFixed(fan(), rpm: 3000); XCTAssertTrue(applied)
+        var status = FakeService.ready(owned: [])
+        status.lastRecoveryCode = .temperatureLimit
+        status.lastRecoveryReason = "The highest temperature reached 86.0°C; automatic control was restored."
+        service.configureStatus(status)
+        app.refresh()
+        await waitUntil { app.fanActions[0]?.phase == .failed }
+        XCTAssertTrue(app.policies.isEmpty)
+        XCTAssertTrue(app.fanActions[0]?.message.contains("86.0°C") == true)
+        XCTAssertFalse(service.calls.contains { $0.operation == .renew })
+    }
+
 }
