@@ -4,6 +4,7 @@ import CSMC
 
 public enum SMCError: LocalizedError {
     case driver(Int32), invalidKey(String), unsupportedType(String), unavailableFan(Int), unsafeSpeed, requiresRoot, verificationFailed(String)
+    case writeNotConfirmed(key: String, requested: Double, observed: Double?)
     public var errorDescription: String? {
         switch self {
         case .driver(let code): return String(format: "AppleSMC returned 0x%08x. This hardware or macOS may not expose the requested operation.", UInt32(bitPattern: code))
@@ -12,6 +13,7 @@ public enum SMCError: LocalizedError {
         case .unavailableFan(let id): return "Fan \(id) has no valid hardware speed bounds."
         case .unsafeSpeed: return "Fan speed must be finite, at least 1200 RPM, and within the reported hardware bounds."
         case .requiresRoot: return "Fan control requires the administrator helper."
+        case .writeNotConfirmed(let key, let requested, let observed): return "Firmware did not confirm \(key) within the bounded wait (requested \(requested), observed \(observed.map(String.init(describing:)) ?? "unavailable")). Automatic control was requested."
         case .verificationFailed(let key): return "Firmware did not confirm the write to \(key). Automatic control was requested."
         }
     }
@@ -64,7 +66,7 @@ public final class SMCConnection {
         return SMCValue(type: type, bytes: bytes)
     }
     private func number(_ key: String) -> Double? { (try? read(key))?.number }
-    private func write(_ key: String, number: Double) throws {
+    private func write(_ key: String, number: Double, confirmationTimeout: TimeInterval = 0) throws {
         guard number.isFinite else { throw SMCError.unsafeSpeed }
         let current = try read(key)
         let bytes: [UInt8]
@@ -89,7 +91,18 @@ public final class SMCConnection {
             bytes.withUnsafeBufferPointer { mcp_smc_write(connection, keyPointer, $0.baseAddress, UInt32($0.count)) }
         }
         guard result == 0 else { throw SMCError.driver(result) }
-        guard let confirmed = self.number(key), abs(confirmed-number) < 1 else { throw SMCError.verificationFailed(key) }
+        // Some fan target registers acknowledge the write before publishing the new value.
+        // Bound this wait below the helper's 2-second IPC deadline; mode writes stay immediate.
+        let deadline = ProcessInfo.processInfo.systemUptime + confirmationTimeout
+        var observed: Double?
+        repeat {
+            observed = self.number(key)
+            if let observed, abs(observed-number) < 1 { return }
+            let remaining = deadline - ProcessInfo.processInfo.systemUptime
+            guard remaining > 0 else { break }
+            Thread.sleep(forTimeInterval: min(0.025, remaining))
+        } while true
+        throw SMCError.writeNotConfirmed(key: key, requested: number, observed: observed)
     }
     private func modeKey(_ id: Int) -> String? {
         for key in ["F\(id)md", "F\(id)Md"] where number(key) != nil { return key }
@@ -181,7 +194,7 @@ public final class SMCConnection {
             guard rpm.isFinite, rpm >= max(fan.minRPM, 1200), rpm <= fan.maxRPM else { throw SMCError.unsafeSpeed }
             do {
                 try setManual(id, true)
-                try write("F\(id)Tg", number: rpm)
+                try write("F\(id)Tg", number: rpm, confirmationTimeout: 0.8)
             } catch {
                 try? setManual(id, false)
                 #if arch(arm64)

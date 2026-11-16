@@ -55,6 +55,7 @@ struct FanPolicy { var rpm: Double?; var points: [FanCurvePoint]?; var sensorID:
     private var controlGeneration = 0
     private var fanGenerations: [Int: Int] = [:]
     private var monitoringGeneration = 0
+    var version: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "development" }
     var english: Bool { language == "en" }
     func text(_ zh: String, _ en: String) -> String { english ? en : zh }
     var peakTemperature: Double? { snapshot.temperatures.map(\.celsius).max() }

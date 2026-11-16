@@ -2,7 +2,7 @@
 # Build and package from source. Requires Xcode Command Line Tools on macOS.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.1.1}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/dist}"
 ARCHS="${ARCHS:-arm64 x86_64}"
 IDENTITY="${CODE_SIGN_IDENTITY:--}"
@@ -17,6 +17,7 @@ APP="$STAGE/Mac Control Pro.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Library/LaunchServices"
 app_bins=()
 helper_bins=()
+cli_bins=()
 count=0
 for arch in $ARCHS; do
   case "$arch" in arm64|x86_64) ;; *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; esac
@@ -25,19 +26,22 @@ for arch in $ARCHS; do
   bin="$(swift build --package-path "$ROOT" --scratch-path "$scratch" -c release --arch "$arch" --show-bin-path)"
   app_bins+=("$bin/MacControlPro")
   helper_bins+=("$bin/MacControlHelper")
+  cli_bins+=("$bin/MacControlCLI")
   count=$((count + 1))
 done
 [[ "$count" -gt 0 ]] || { echo 'ARCHS must contain at least one architecture.' >&2; exit 1; }
 if [[ "$count" -gt 1 ]]; then
   lipo -create "${app_bins[@]}" -output "$APP/Contents/MacOS/MacControlPro"
   lipo -create "${helper_bins[@]}" -output "$APP/Contents/Library/LaunchServices/MacControlHelper"
+  lipo -create "${cli_bins[@]}" -output "$APP/Contents/MacOS/MacControlCLI"
   suffix=universal
 else
   cp "${app_bins[0]}" "$APP/Contents/MacOS/MacControlPro"
   cp "${helper_bins[0]}" "$APP/Contents/Library/LaunchServices/MacControlHelper"
+  cp "${cli_bins[0]}" "$APP/Contents/MacOS/MacControlCLI"
   suffix="$ARCHS"
 fi
-chmod 755 "$APP/Contents/MacOS/MacControlPro" "$APP/Contents/Library/LaunchServices/MacControlHelper"
+chmod 755 "$APP/Contents/MacOS/MacControlPro" "$APP/Contents/Library/LaunchServices/MacControlHelper" "$APP/Contents/MacOS/MacControlCLI"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -68,6 +72,7 @@ done
 sign_args=(--force --sign "$IDENTITY")
 if [[ "$IDENTITY" != '-' ]]; then sign_args+=(--options runtime --timestamp); fi
 codesign "${sign_args[@]}" "$APP/Contents/Library/LaunchServices/MacControlHelper"
+codesign "${sign_args[@]}" "$APP/Contents/MacOS/MacControlCLI"
 codesign "${sign_args[@]}" "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 name="Mac-Control-Pro-$VERSION-$suffix"

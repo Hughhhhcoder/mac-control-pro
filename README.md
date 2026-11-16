@@ -21,7 +21,7 @@
 
 在 [Releases](https://github.com/Hughhhhcoder/mac-control-pro/releases/latest) 下载 `.dmg`，打开后将 **Mac Control Pro.app** 拖入「应用程序」。也可以下载 `.zip`，解压后运行。通用版本同时包含 Apple Silicon 与 Intel 程序。
 
-要求 **macOS 14 或更新版本**。首个版本使用临时签名（ad-hoc），尚未经过 Apple 公证。若系统拦截，请尝试按住 Control 点按应用并选择「打开」，或在「系统设置 → 隐私与安全性」中选择「仍要打开」。不同 macOS 版本的提示可能不同。[安装说明](docs/INSTALLATION.md) 包含校验和与源码构建方法。
+要求 **macOS 14 或更新版本**。当前发行包使用临时签名（ad-hoc），尚未经过 Apple 公证。若系统拦截，请尝试按住 Control 点按应用并选择「打开」，或在「系统设置 → 隐私与安全性」中选择「仍要打开」。不同 macOS 版本的提示可能不同。[安装说明](docs/INSTALLATION.md) 包含校验和与源码构建方法。
 
 **正常启动只读取数据，不需要管理员权限。** 如需手动转速或曲线控制，另行安装开源控制助手；安装步骤见下文。
 
@@ -34,9 +34,16 @@
 - **菜单栏入口**：快速查看关键读数并打开主窗口。
 - **偏好设置**：中文 / English、温度单位、采样间隔与登录启动。
 - **导入与导出**：配置预设可通过 JSON 分享；当前会话支持 CSV 导出，诊断快照支持 JSON，也可使用 `--diagnose` 输出实际读数。
+- **命令行工具**：应用内置 `MacControlCLI`，支持真实读数、有限时长调速、温度曲线和 JSONL 采样记录；结束时尝试恢复自动。
 - **离线运行**：核心功能无需账号、订阅或云端服务。
 
 本项目受到风扇管理工具使用场景启发，是独立实现；与 CrystalIDEA、Macs Fan Control 或 Apple 无隶属关系。未复制、打包或重新分发 Macs Fan Control 的二进制文件、资源或商业代码。「更强」在此指开放的源码与曲线、图表、诊断和原生工作流；不能据此推断其硬件兼容性已经超过成熟商用产品。
+
+## 0.1.1 硬件验证
+
+已在 **Mac18,1 / Apple M6 / macOS 27.0** 安装控制助手，并验证真实固定转速、温度曲线、恢复自动和客户端丢失后的租约回退。3000 RPM 请求实际达到 3001 RPM；5500 RPM 稳定后读数为 5490–5505 RPM，两次测试随后均触发 85°C 保护。12 秒温度曲线测试完整结束并恢复自动；客户端被强制结束后，独立观察到 12.131 秒时返回自动模式。
+
+原生界面另行完成了约 20 秒的 4500 RPM 固定控制（实际 4492–4510 RPM）及约 24 秒的曲线预设观察，随后均通过界面恢复自动。实测范围、逐次读数和时间图见 [硬件验证记录](docs/HARDWARE_VALIDATION.md)。3000 / 5500 RPM 两次测试被温度保护中断；Intel 和其他 Mac 机型的写入仍未实机验证。
 
 ## 安装风扇控制助手（可选）
 
@@ -54,7 +61,7 @@ sudo ./scripts/install-helper.sh "/Applications/Mac Control Pro.app"
 sudo ./scripts/uninstall-helper.sh
 ```
 
-助手使用短租约管理手动模式：客户端停止续约后，约 12 秒内尝试恢复自动模式；传感器缺失、温度达到保护阈值或连接异常时会拒绝控制或触发恢复。**SMC 接口未公开，固件和硬件故障可能导致写入或恢复失败。** 具体边界与测试范围见 [兼容性](docs/COMPATIBILITY.md)。首发版本不宣称通过所有 Mac 机型的硬件控制验证。
+助手使用短租约管理手动模式：客户端约 12 秒未续约后，尝试恢复自动模式；传感器缺失、温度达到保护阈值或连接异常时会拒绝控制或触发恢复。**SMC 接口未公开，固件和硬件故障可能导致写入或恢复失败。** 具体边界与测试范围见 [兼容性](docs/COMPATIBILITY.md)。本机实测不构成所有 Mac 机型的硬件控制保证。
 
 ## 从源码构建
 
@@ -90,8 +97,9 @@ Sources/
   CSMC/                  IOKit / SMC C 接口
   MacControlCore/        硬件读数、数据模型与风扇曲线
   MacControlHelper/      独立的特权风扇控制服务
+  MacControlCLI/         有限时长调速与真实采样工具
   MacControlPro/         SwiftUI 应用与菜单栏
-Tests/                   核心与助手逻辑测试
+Tests/                   核心、助手和 CLI 参数测试
 scripts/                 构建、打包与助手安装 / 卸载
 docs/                    架构、安装、权限与兼容性
 .github/                 CI、发布与协作模板
@@ -102,7 +110,9 @@ docs/                    架构、安装、权限与兼容性
 - [架构](docs/ARCHITECTURE.md)：数据流、进程边界和故障处理。
 - [兼容性](docs/COMPATIBILITY.md)：Apple Silicon / Intel、无风扇设备及未验证项。
 - [构建与发布](docs/RELEASING.md)：通用包、签名、公证与 GitHub Release。
-- [验证与测试](docs/TESTING.md)：自动化测试、只读检查、界面与硬件验证的区别。
+- [验证与测试](docs/TESTING.md)：28 项 XCTest 及界面、硬件验证范围。
+- [硬件验证](docs/HARDWARE_VALIDATION.md)：M6 固定转速、曲线、保护与租约回退的实测记录。
+- [命令行工具](docs/CLI.md)：调速时限、独立读回、恢复行为和 JSONL 字段。
 - [路线图](docs/ROADMAP.md)：兼容性矩阵、签名发行与后续能力。
 - [更新日志](CHANGELOG.md)、[安全政策](SECURITY.md)、[开源许可](LICENSE)。
 

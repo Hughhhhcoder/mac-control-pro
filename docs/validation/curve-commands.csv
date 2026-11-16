@@ -1,0 +1,8 @@
+elapsed_seconds,event,source_celsius,requested_rpm,actual_rpm,readback_target_rpm,manual_mode,accepted,owned_leases
+0.0,sample,69.95625305175781,6997.812652587891,2498,6997,True,True,[0]
+2.0,sample,68.86250305175781,6943.125152587891,6846,6943,True,True,[0]
+4.0,sample,66.55000305175781,6827.500152587891,6917,6827,True,True,[0]
+6.0,sample,64.375,6718.75,6841,6718,True,True,[0]
+8.0,sample,63.62812423706055,6681.406211853027,6741,6681,True,True,[0]
+10.0,sample,65.42500305175781,6771.250152587891,6697,6771,True,True,[0]
+12.0,restore,,,6751,6771,False,True,[]

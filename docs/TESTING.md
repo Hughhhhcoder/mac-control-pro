@@ -5,9 +5,10 @@
 ```bash
 swift test
 swift run MacControlHelper --self-test
+swift run MacControlCLI --self-test
 ```
 
-核心测试覆盖数值解码、曲线验证与插值、命令参数、温度保护和租约超时等纯逻辑。`--self-test` 只验证协议和策略，不访问或写入硬件，不要求 root。
+当前共 28 项 XCTest：17 项核心 / 助手测试及 11 项 CLI 参数测试。核心覆盖数值解码、曲线验证与插值、命令参数、温度保护和租约超时；CLI 覆盖参数、时限、曲线节点和非法输入。两个 `--self-test` 均不访问或写入硬件，不要求 root。
 
 这些检查不会证明某台 Mac 支持 SMC 写入。CI 的通用构建证明两个架构能编译，不代表两种硬件均经过实机控制测试。
 
@@ -19,6 +20,7 @@ swift run MacControlHelper --self-test
 codesign --verify --deep --strict "dist/Mac Control Pro.app"
 lipo -archs "dist/Mac Control Pro.app/Contents/MacOS/MacControlPro"
 lipo -archs "dist/Mac Control Pro.app/Contents/Library/LaunchServices/MacControlHelper"
+lipo -archs "dist/Mac Control Pro.app/Contents/MacOS/MacControlCLI"
 ```
 
 确认诊断值来自真实系统：没有电池的设备不显示虚构电量，没有风扇的设备不显示模拟风扇，读取失败时清晰说明不可用。CPU 需要两次采样后才可计算差值。
@@ -35,7 +37,27 @@ lipo -archs "dist/Mac Control Pro.app/Contents/Library/LaunchServices/MacControl
 
 本仓库默认构建与 CI 不自动安装 root 助手，不自动改变风扇状态。提交中涉及写入的改动需要说明哪些硬件实际验证过，哪些仍未知。
 
-## 0.1.0 本次验证记录（2026-11-16）
+## 0.1.1 实机控制记录（2026-11-16）
+
+设备为 Mac18,1 / Apple M6 / macOS 27.0，风扇 ID 0，SMC 报告范围 2000–8250 RPM。管理员认证后安装 root 助手，安装副本与候选应用内助手的哈希已核对。硬件写入分别通过 CLI 和原生 GUI 执行，并由独立 SMC 采样观察。
+
+| 项目 | 结果 |
+| --- | --- |
+| 自动化测试 | 28 项 XCTest 通过；与真实硬件证据分别记录 |
+| 固定 3000 RPM | 目标读回 3000、实际达到 3001；约 1 秒手动采样后触发 85°C 保护，恢复自动 |
+| 固定 5500 RPM | 约 16 秒连续手动采样，9 次请求通过；稳定后实际 5490–5505 RPM，随后触发 85°C 保护 |
+| 温度曲线 | TCMb 来源，节点 `40:5500,60:6500,80:7500`；完整运行 12 秒，6 次请求通过；请求目标约 6997.8 → 6681.4 → 6771.3 RPM，实际转速随之变化 |
+| 正常结束与明确恢复 | 曲线结束的恢复请求成功，`isManual=false`、`manualFanIDs=[]`；模式切换后实际 RPM 仍有惯性，目标寄存器也可能暂时保留旧读数 |
+| 高温拒绝 / 恢复 | 高于 85°C 的请求被拒绝；已激活的固定转速会话触发保护后，客户端检测租约丢失并停止，未重新申请旧目标 |
+| 客户端丢失 | 6500 RPM 首次确认后强制结束 CLI；12.131 秒观察到自动模式，14.150 秒实际约 2545 RPM；独立观察的 TCMb / TVD0 均低于 78.1°C |
+| 原生界面 | 4500 RPM 连续手动采样约 20.2 秒，稳定实际 4492–4510 RPM；“持续负载”曲线预设连续观察约 23.7 秒，目标 4762–6500 RPM。两次都点击界面恢复自动并核对结果 |
+| 范围 | 3000 / 5500 RPM 测试被保护中断；原生界面 4500 RPM 已连续观察约 20 秒；其他 Mac 型号、Intel 写入及 macOS 14 实机运行未验证 |
+
+首次目标写入失败来自立即读回旧 `F0Tg` 的时序。修复后采用最多 0.8 秒的单调时钟确认，仅用于目标值；模式验证保持严格，失败仍回滚。实测目标和实际 RPM 的变化分别保留，未把助手返回成功等同于风扇已稳定。
+
+[完整硬件记录、采样与时间图](HARDWARE_VALIDATION.md) · [CLI 命令与 JSONL 字段](CLI.md)
+
+## 0.1.0 历史验证记录（2026-11-16）
 
 | 项目 | 结果 |
 | --- | --- |

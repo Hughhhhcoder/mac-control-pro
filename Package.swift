@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "MacControlPro", targets: ["MacControlPro"]),
         .executable(name: "MacControlHelper", targets: ["MacControlHelper"]),
+        .executable(name: "MacControlCLI", targets: ["MacControlCLI"]),
         .library(name: "MacControlCore", targets: ["MacControlCore"])
     ],
     targets: [
@@ -14,6 +15,8 @@ let package = Package(
         .target(name: "MacControlCore", dependencies: ["CSMC"], linkerSettings: [.linkedFramework("IOKit")]),
         .executableTarget(name: "MacControlPro", dependencies: ["MacControlCore"], linkerSettings: [.linkedFramework("SwiftUI"), .linkedFramework("Charts"), .linkedFramework("ServiceManagement")]),
         .executableTarget(name: "MacControlHelper", dependencies: ["MacControlCore"]),
-        .testTarget(name: "MacControlCoreTests", dependencies: ["MacControlCore"])
+        .executableTarget(name: "MacControlCLI", dependencies: ["MacControlCore"]),
+        .testTarget(name: "MacControlCoreTests", dependencies: ["MacControlCore"]),
+        .testTarget(name: "MacControlCLITests", dependencies: ["MacControlCLI"])
     ]
 )

@@ -41,7 +41,7 @@ struct DiagnosticsView: View {
         }
         Banner(symbol: "lock.shield", title: model.text("可审查的权限边界", "An auditable permission boundary"), detail: model.text("主应用以普通用户运行。可选辅助服务仅接受状态查询、指定风扇转速和恢复自动三类指令，不执行任意命令。未安装时仍可完整使用监控功能。", "The app runs as your user. The optional helper accepts only status, fan RPM and restore-automatic commands. Monitoring works without it."))
         Panel(title: model.text("支持与开源", "Support & open source"), symbol: "curlybraces") {
-            Text(model.text("v0.1.0 · MIT License · 完全开源", "v0.1.0 · MIT License · Fully open source")).font(.headline)
+            Text(model.text("v\(model.version) · MIT License · 完全开源", "v\(model.version) · MIT License · Fully open source")).font(.headline)
             Text(model.text("这是独立实现的首个预览版本。SMC 接口未公开，不同机型可读和可控的范围会变化。通用温度标识保留原始 SMC 名称；尚未验证的型号不会被宣称完整支持。", "This is an independent first preview. SMC is undocumented and hardware support varies. Generic sensors retain their raw SMC key; untested models are not claimed as fully supported.")).font(.callout).foregroundStyle(.secondary)
             HStack { Link(model.text("查看源码", "Source Code"), destination: URL(string: "https://github.com/Hughhhhcoder/mac-control-pro")!); Link(model.text("报告问题", "Report an Issue"), destination: URL(string: "https://github.com/Hughhhhcoder/mac-control-pro/issues/new/choose")!); Spacer(); Button(model.text("导出诊断…", "Export Diagnostics…"), action: model.exportDiagnostics).buttonStyle(.borderedProminent) }
         }
