@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security disclosure / 安全问题
+    url: https://github.com/Hughhhhcoder/mac-control-pro/security/advisories/new
+    about: Privately report vulnerabilities in the privileged helper.

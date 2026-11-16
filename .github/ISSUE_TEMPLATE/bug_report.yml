@@ -1,0 +1,24 @@
+name: Bug report / 问题反馈
+description: Report a reproducible problem without sharing sensitive diagnostics.
+labels: [bug]
+body:
+  - type: textarea
+    attributes:
+      label: What happened? / 问题与复现步骤
+      description: Include expected behavior and exact steps.
+    validations:
+      required: true
+  - type: input
+    attributes:
+      label: Mac model, chip, macOS, app version
+      placeholder: MacBook Pro, M-series, macOS 15.x, 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    attributes:
+      label: Helper installed? / 是否安装控制助手
+      options: ['No / 否', 'Yes / 是']
+  - type: textarea
+    attributes:
+      label: Logs or screenshots / 日志或截图
+      description: Review and remove usernames, paths, serial numbers, and other personal data before attaching.

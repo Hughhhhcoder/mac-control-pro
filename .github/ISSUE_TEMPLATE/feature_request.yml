@@ -1,0 +1,17 @@
+name: Feature request / 功能建议
+description: Describe a problem and a concrete improvement.
+labels: [enhancement]
+body:
+  - type: textarea
+    attributes:
+      label: Problem / 使用场景
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed behavior / 期望行为
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Hardware or compatibility considerations / 硬件兼容性
