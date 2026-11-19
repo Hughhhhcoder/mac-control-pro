@@ -372,7 +372,34 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(service.calls.contains { $0.operation == .release })
     }
 
-    @MainActor func testThermalProtectionPreservesMonitoringAndBlocksWrites() async {
+    @MainActor func testHighTemperatureAloneAllowsManualControl() async {
+        let service = FakeService()
+        var status = FakeService.ready()
+        status.hottestTemperatureCelsius = 90
+        service.configureStatus(status)
+        let app = model(service: service); await connect(app)
+        app.snapshot.temperatures = [.init(id: "TCMb", name: "CPU", celsius: 90, category: "CPU")]
+
+        XCTAssertNil(app.globalControlNotice)
+        let applied = await app.setFixed(fan(), rpm: 5500)
+        XCTAssertTrue(applied)
+        XCTAssertEqual(app.policies[0]?.rpm, 5500)
+    }
+
+    @MainActor func testSystemThermalPressurePreservesMonitoringAndBlocksWrites() async {
+        let service = FakeService()
+        service.configureStatus(.init(ok: true, message: "Thermal pressure", protocolVersion: FanControlProtocol.currentVersion,
+                                      smcAvailable: true, canControl: false, controlBlockReason: "Serious thermal pressure", controlBlockCode: .thermalPressure,
+                                      hottestTemperatureCelsius: 90))
+        let app = model(service: service); await connect(app)
+        XCTAssertTrue(app.helperAvailable)
+        XCTAssertEqual(app.snapshot.fans.count, 1)
+        XCTAssertEqual(app.globalControlNotice, "macOS 报告严重或危急的热压力，请使用系统自动模式。")
+        let applied = await app.setFixed(fan(), rpm: 3000)
+        XCTAssertFalse(applied); XCTAssertFalse(service.calls.contains { $0.operation == .set })
+    }
+
+    @MainActor func testLegacyFixedTemperatureLimitStillUsesReportedThreshold() async {
         let service = FakeService()
         service.configureStatus(.init(ok: true, message: "Thermal protection", protocolVersion: FanControlProtocol.currentVersion,
                                       smcAvailable: true, canControl: false, controlBlockReason: "Too hot", controlBlockCode: .temperatureLimit,
@@ -380,7 +407,7 @@ final class AppModelTests: XCTestCase {
         let app = model(service: service); await connect(app)
         XCTAssertTrue(app.helperAvailable)
         XCTAssertEqual(app.snapshot.fans.count, 1)
-        XCTAssertNotNil(app.globalControlNotice)
+        XCTAssertTrue(app.globalControlNotice?.contains("85°C") == true)
         let applied = await app.setFixed(fan(), rpm: 3000)
         XCTAssertFalse(applied); XCTAssertFalse(service.calls.contains { $0.operation == .set })
     }

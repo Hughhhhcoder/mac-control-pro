@@ -2,7 +2,7 @@ import Foundation
 
 public enum FanControlProtocol {
     public static let currentVersion = 2
-    public static let helperVersion = "0.2.0"
+    public static let helperVersion = "0.2.1"
 }
 
 public enum FanCommand: String, Codable, Sendable {
@@ -107,6 +107,7 @@ public struct HelperResponse: Codable, Sendable {
     public var canControl: Bool?
     public var controlBlockReason: String?
     public var controlBlockCode: HelperErrorCode?
+    // Retained for protocol 2 helpers that reported a fixed cutoff.
     public var temperatureLimitCelsius: Double?
     public var hottestTemperatureCelsius: Double?
     public var requestedRPM: Double?
@@ -209,7 +210,6 @@ public struct HelperControlBlock: Sendable {
 }
 
 public enum FanControlPolicy {
-    public static let maximumTemperature = 85.0
     public static let minimumManualRPM = 1200.0
 
     public static func manualMinimumRPM(minimumRPM: Double, maximumRPM: Double) -> Double? {
@@ -222,9 +222,6 @@ public enum FanControlPolicy {
         if thermalPressure { return .init(code: .thermalPressure, message: "macOS reports serious or critical thermal pressure. Use system automatic mode.") }
         guard !temperatures.isEmpty, temperatures.allSatisfy({ $0.isFinite && $0 > 0 }) else {
             return .init(code: .temperatureUnavailable, message: "Manual control needs valid temperature feedback. Use system automatic mode.")
-        }
-        if let hottest = temperatures.max(), hottest >= maximumTemperature {
-            return .init(code: .temperatureLimit, message: String(format: "The highest temperature is %.1f°C; manual control is blocked at %.0f°C. Use system automatic mode.", hottest, maximumTemperature))
         }
         return nil
     }

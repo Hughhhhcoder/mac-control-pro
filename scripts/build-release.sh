@@ -2,7 +2,7 @@
 # Build and package from source. Requires Xcode Command Line Tools on macOS.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VERSION="${VERSION:-0.2.0}"
+VERSION="${VERSION:-0.2.1}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT/dist}"
 ARCHS="${ARCHS:-arm64 x86_64}"
 IDENTITY="${CODE_SIGN_IDENTITY:--}"

@@ -427,10 +427,15 @@ import UniformTypeIdentifiers
         case "helper_unavailable", "transport_failure", "connection_timeout": return "控制助手已断开或没有及时响应。可重新检测、重新安装助手，或复制诊断查看原因。"
         case "wrong_user": return "控制助手当前绑定了另一个账号。为当前登录账号重新安装助手即可修复。"
         case "upgrade_required", "protocol_mismatch": return "主应用和控制助手版本不匹配，请更新助手。"
-        case "temperature_guard", "temperature_unavailable", "thermal_guard", "temperature_limit", "thermal_pressure":
-            let current = temperature((context ?? helperResponse)?.hottestTemperatureCelsius ?? peakTemperature)
-            let limit = temperature((context ?? helperResponse)?.temperatureLimitCelsius ?? 85)
-            return "控制保护已生效（当前最高 \(current)，保护阈值 \(limit)）。风扇由系统自动管理；等待温度回落后可重新应用。"
+        case "temperature_unavailable": return "无法获取有效的温度读数，请使用系统自动模式。"
+        case "thermal_pressure": return "macOS 报告严重或危急的热压力，请使用系统自动模式。"
+        case "temperature_guard", "thermal_guard", "temperature_limit":
+            let report = context ?? helperResponse
+            guard let limit = report?.temperatureLimitCelsius else {
+                return "温度达到旧版助手的控制阈值，请使用系统自动模式。"
+            }
+            let current = temperature(report?.hottestTemperatureCelsius ?? peakTemperature)
+            return "温度达到旧版助手的控制阈值（当前最高 \(current)，阈值 \(temperature(limit))）。请使用系统自动模式。"
         case "lease_lost", "lease_expired": return "助手已结束控制租约，原策略已停止。请确认原因后重新应用。"
         case "fan_busy", "session_mismatch", "lease_owned_by_another_client": return "这只风扇正由另一个控制会话管理。请先恢复自动，避免多个控制器互相覆盖。"
         case "smc_unavailable", "unsupported_hardware": return "系统暂未开放可用的 SMC 控制接口。监控仍可使用；可复制诊断排查。"

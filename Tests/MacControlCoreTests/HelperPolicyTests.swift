@@ -3,11 +3,12 @@ import Darwin
 @testable import MacControlCore
 
 final class HelperPolicyTests: XCTestCase {
-    func testRefusesMissingOrDangerousTemperatureFeedback() {
-        for temperatures in [[], [Double.nan], [85], [42, 93], [-3], [Double.infinity]] as [[Double]] {
+    func testRefusesMissingOrInvalidTemperatureFeedback() {
+        for temperatures in [[], [Double.nan], [-3], [Double.infinity]] as [[Double]] {
             XCTAssertThrowsError(try FanControlPolicy.validateSet(requestedRPM: 2000, minimumRPM: 1000, maximumRPM: 6000, temperatures: temperatures))
         }
         XCTAssertNoThrow(try FanControlPolicy.validateSet(requestedRPM: 2000, minimumRPM: 1000, maximumRPM: 6000, temperatures: [40, 70]))
+        XCTAssertNoThrow(try FanControlPolicy.validateSet(requestedRPM: 2000, minimumRPM: 1000, maximumRPM: 6000, temperatures: [42, 93]))
     }
 
     func testRefusesOutOfRangeAndInvalidRPMBounds() {
@@ -175,12 +176,13 @@ final class HelperPolicyTests: XCTestCase {
         XCTAssertThrowsError(try FanControlPolicy.validateSet(requestedRPM: 799, minimumRPM: 0, maximumRPM: 800, temperatures: [45]))
     }
 
-    func testGuardStatusDistinguishesHeatMissingFeedbackAndSystemPressure() {
+    func testGuardStatusAllowsHighReadingsAndStillChecksFeedbackAndSystemPressure() {
         XCTAssertNil(FanControlPolicy.guardFailure(temperatures: [45, 70]))
+        XCTAssertNil(FanControlPolicy.guardFailure(temperatures: [45, 85]))
+        XCTAssertNil(FanControlPolicy.guardFailure(temperatures: [45, 93]))
         XCTAssertEqual(FanControlPolicy.guardFailure(temperatures: [])?.code, .temperatureUnavailable)
         XCTAssertEqual(FanControlPolicy.guardFailure(temperatures: [.nan])?.code, .temperatureUnavailable)
-        XCTAssertEqual(FanControlPolicy.guardFailure(temperatures: [85])?.code, .temperatureLimit)
-        XCTAssertEqual(FanControlPolicy.guardFailure(temperatures: [45], thermalPressure: true)?.code, .thermalPressure)
+        XCTAssertEqual(FanControlPolicy.guardFailure(temperatures: [93], thermalPressure: true)?.code, .thermalPressure)
     }
 
     func testNonReadingPeerCannotBlockSendBeyondAbsoluteDeadline() throws {

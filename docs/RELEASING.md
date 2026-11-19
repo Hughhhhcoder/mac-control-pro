@@ -5,8 +5,8 @@
 ```bash
 swift test
 ./scripts/test-installer.sh
-VERSION=0.2.0 ./scripts/build-release.sh
-./scripts/test-installer.sh dist/Mac-Control-Pro-0.2.0-universal.pkg dist/Mac-Control-Pro-0.2.0-universal.zip
+./scripts/build-release.sh
+./scripts/test-installer.sh dist/Mac-Control-Pro-0.2.1-universal.pkg dist/Mac-Control-Pro-0.2.1-universal.zip
 ```
 
 `dist/` 输出：
@@ -21,7 +21,7 @@ VERSION=0.2.0 ./scripts/build-release.sh
 
 | 环境变量 | 默认值 | 含义 |
 | --- | --- | --- |
-| `VERSION` | `0.2.0` | 数字版本 `major.minor.patch` |
+| `VERSION` | `0.2.1` | 数字版本 `major.minor.patch` |
 | `ARCHS` | `arm64 x86_64` | 编译并合并的架构 |
 | `OUTPUT_DIR` | `dist` | 产物目录 |
 | `CODE_SIGN_IDENTITY` | `-` | ad-hoc；发行签名使用 Developer ID Application |

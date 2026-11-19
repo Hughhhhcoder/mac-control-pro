@@ -56,7 +56,6 @@ private final class FanHelper {
                        protocolVersion: FanControlProtocol.currentVersion, helperVersion: FanControlProtocol.helperVersion,
                        authorizedUID: authorizedUID, smcAvailable: smc != nil, hardwareModel: hardwareModel,
                        controlBlockReason: block?.message, controlBlockCode: block?.code,
-                       temperatureLimitCelsius: FanControlPolicy.maximumTemperature,
                        requestedRPM: requestedRPM, confirmedTargetRPM: confirmedTargetRPM,
                        errorCode: errorCode, applicationState: state, retryAfterSeconds: retryAfter,
                        pendingFanIDs: Array(pendingFanIDs), lastRecoveryReason: lastRecovery?.message,
@@ -389,7 +388,7 @@ if arguments.contains("--self-test") {
         guard leases.ownedFanIDs(ownerID: UUID().uuidString).isEmpty, leases.ownedFanIDs(ownerID: owner) == [0] else {
             throw FanControlError.invalidRequest("Lease ownership self-test failed.")
         }
-        try FanControlPolicy.validateSet(requestedRPM: 2000, minimumRPM: 1000, maximumRPM: 6000, temperatures: [45])
+        try FanControlPolicy.validateSet(requestedRPM: 2000, minimumRPM: 1000, maximumRPM: 6000, temperatures: [45, 90])
         print("Helper \(FanControlProtocol.helperVersion), protocol \(FanControlProtocol.currentVersion), lease ownership and control policy self-test passed. No hardware was accessed or changed.")
         exit(0)
     } catch { fputs("Self-test failed: \(error)\n", stderr); exit(1) }
